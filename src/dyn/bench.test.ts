@@ -73,7 +73,6 @@ describe('solver performance', () => {
     const freeBodies = timePerStep(chain(5, MASK.free), 'rk4', 2000);
     rows.push(`   5 bodies (30 DOF, all free): RK4 ${freeBodies.toFixed(1)} µs/step`);
 
-    // eslint-disable-next-line no-console
     console.log(`\nSolver throughput:\n${rows.join('\n')}\n`);
   });
 
