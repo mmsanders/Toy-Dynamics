@@ -292,7 +292,7 @@ function DofRow({
             />
             <NumberField
               label="Friction"
-              hint="constant"
+              hint="sliding"
               value={dof.friction}
               onChange={(friction) => setDof(hingeId, axis, { friction })}
               min={0}
@@ -300,11 +300,36 @@ function DofRow({
               step={0.05}
               unit={effortUnit}
             />
-            {dof.friction !== 0 && (
+            <NumberField
+              label="Stiction"
+              hint="breakaway"
+              value={dof.stiction}
+              onChange={(stiction) => setDof(hingeId, axis, { stiction })}
+              min={0}
+              max={50}
+              step={0.1}
+              unit={effortUnit}
+            />
+            {dof.stiction === 0 && dof.friction !== 0 && (
               <Note>
-                Regularized over a small velocity so it does not chatter, which means it models
-                sliding friction rather than stiction — a joint under a light load will creep
-                instead of holding.
+                Sliding friction alone is regularized over a small velocity so it does not
+                chatter, which means a joint under a light load creeps instead of holding. Give
+                it a breakaway force above and it will hold properly.
+              </Note>
+            )}
+            {dof.stiction !== 0 && (
+              <Note>
+                Below the breakaway force the axis is held completely still — not by a stiff
+                spring, but by dropping out of the equations the way a locked axis does, so it
+                holds exactly and costs nothing. Past it the axis breaks free and sliding
+                friction takes over. Stick and slip are decided once per step, so a transition
+                lands one step late.
+              </Note>
+            )}
+            {dof.stiction !== 0 && dof.stiction < dof.friction && (
+              <Note tone="warn">
+                Breakaway is below sliding friction, which is backwards for most materials —
+                a joint that is harder to keep moving than to start moving.
               </Note>
             )}
 

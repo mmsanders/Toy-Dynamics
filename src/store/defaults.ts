@@ -57,6 +57,7 @@ export function neutralDof(free = false): DofSpec {
     rest: 0,
     damping: 0,
     friction: 0,
+    stiction: 0,
     limit: { enabled: false, lo: -1, hi: 1, stiffness: 1000 },
   };
 }

@@ -149,3 +149,37 @@ test('the timestep warning offers a fix that resolves it', async ({ page }) => {
   await fix.click();
   await expect(page.getByText(/Timestep is too large/)).toHaveCount(0);
 });
+
+test('static friction holds a loaded joint completely still', async ({ page }) => {
+  await openApp(page);
+
+  // Silence the driving actuator so gravity alone loads the joints.
+  await page.getByRole('tab', { name: 'Actuators' }).click();
+  await page.getByRole('button', { name: 'Disable' }).first().click();
+
+  const forearmPositionAt = async (time: string) => {
+    await page.getByRole('tab', { name: 'Run' }).click();
+    await expect(page.locator('.plot').first()).toBeVisible({ timeout: 30_000 });
+    await page.getByRole('combobox', { name: 'Body' }).selectOption({ label: 'Forearm' });
+    await page.locator('.scrubber__track').fill(time);
+    await expect(page.locator('.scrubber__time')).toContainText(time === '0' ? '0.00' : '10.00');
+    return (await page.locator('.readout__block').first().locator('.value__num').allInnerTexts()).join();
+  };
+
+  const startsAt = await forearmPositionAt('0');
+  const freeEnd = await forearmPositionAt('10');
+  // Under gravity alone the arm swings; it must not still be where it started.
+  expect(freeEnd).not.toBe(startsAt);
+
+  await page.getByRole('tab', { name: 'Hinges' }).click();
+  for (const hinge of ['Shoulder', 'Elbow']) {
+    await page.getByText(hinge, { exact: true }).first().click();
+    const stiction = page.getByRole('textbox', { name: 'Stiction' });
+    await stiction.fill('500');
+    await stiction.press('Enter');
+  }
+
+  // With a breakaway force far above the gravity load, nothing moves at all — not "barely",
+  // exactly. A stuck axis is dropped from the system rather than held by a spring.
+  expect(await forearmPositionAt('10')).toBe(startsAt);
+});

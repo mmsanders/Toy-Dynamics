@@ -272,6 +272,136 @@ describe('prismatic joint', () => {
   });
 });
 
+describe('static friction', () => {
+  /** A slider pushed along its own free axis by a constant world-frame force. */
+  const pushed = (force: number, stiction: number, friction = 0, duration = 2) => {
+    const spec = slider(2, dofParams({ friction, stiction }));
+    spec.actuators = [
+      { name: 'F', body: 0, kind: 'force', frame: 'world', point: [0, 0, 0], vector: [force, 0, 0], profile: () => 1 },
+    ];
+    return run(spec, 1e-3, duration);
+  };
+
+  it('holds a load below the breakaway force exactly, with no creep at all', () => {
+    const { samples } = pushed(4, 10);
+    // Not "small" — zero. A stuck axis is dropped from the system entirely, so there is no
+    // penalty spring to deflect and nothing to integrate. This is the whole difference from
+    // regularized friction, which would creep here.
+    for (const sample of samples) {
+      expect(sample.q[0]!).toBe(0);
+      expect(sample.v[0]!).toBe(0);
+    }
+  });
+
+  it('breaks free above the breakaway force and then slides', () => {
+    const force = 12;
+    const kinetic = 3;
+    const { samples } = pushed(force, 5, kinetic);
+    const last = samples[samples.length - 1]!;
+
+    // Once sliding it is kinetic friction that resists, not the breakaway value.
+    const expected = (force - kinetic) / 2;
+    expect(last.v[0]!).toBeCloseTo(expected * last.t, 2);
+    expect(last.q[0]!).toBeCloseTo(0.5 * expected * last.t * last.t, 2);
+  });
+
+  it('puts the transition at the breakaway force', () => {
+    const moved = (force: number) => {
+      const { samples } = pushed(force, 10, 0, 1);
+      return Math.abs(samples[samples.length - 1]!.q[0]!);
+    };
+    expect(moved(9.5)).toBe(0);
+    expect(moved(9.99)).toBe(0);
+    expect(moved(10.5)).toBeGreaterThan(0.01);
+  });
+
+  it('brings a sliding joint to rest at the closed-form distance and keeps it there', () => {
+    // Launched, decelerated by kinetic friction, then caught and held by stiction rather
+    // than creeping on forever or jittering about zero.
+    const mass = 2;
+    const kinetic = 4;
+    const v0 = 5;
+    const spec = slider(mass, dofParams({ friction: kinetic, stiction: 6 }), 0, v0);
+    const { samples } = run(spec, 5e-4, 6);
+
+    const settled = samples.filter((s) => s.t > 4);
+    const restPosition = settled[0]!.q[0]!;
+    for (const sample of settled) {
+      expect(sample.v[0]!).toBe(0);
+      expect(sample.q[0]!).toBe(restPosition);
+    }
+
+    // Constant deceleration μ/m brings it to rest in v₀²/(2a). Stiction catches it a hair
+    // early — below (μs/m)·dt — but that costs under a micrometre here.
+    const deceleration = kinetic / mass;
+    expect(restPosition).toBeCloseTo((v0 * v0) / (2 * deceleration), 3);
+  });
+
+  it('holds a pendulum against gravity, and lets it fall once outmatched', () => {
+    const gravity = 9.80665;
+    const theta0 = 0.5;
+    // Gravity torque about the hinge at this angle.
+    const load = 1 * gravity * 1 * Math.sin(theta0);
+
+    const withStiction = (breakaway: number) => {
+      const spec = pendulum(1, 1, gravity, theta0);
+      spec.hinges[0]!.params = [
+        ...Array(4).fill({ ...dofParams() }),
+        dofParams({ stiction: breakaway }),
+        dofParams(),
+      ];
+      return run(spec, 1e-3, 3).samples;
+    };
+
+    const held = withStiction(load * 1.3);
+    for (const sample of held) expect(sample.q[0]!).toBe(theta0);
+
+    const falls = withStiction(load * 0.5);
+    expect(Math.abs(falls[falls.length - 1]!.q[0]! - theta0)).toBeGreaterThan(0.2);
+  });
+
+  it('costs nothing and changes nothing when the breakaway force is zero', () => {
+    // The stick/slip machinery is skipped entirely, so this must reproduce the old path
+    // bit for bit.
+    const withZero = pushed(6, 0, 2, 1).state;
+
+    const spec = slider(2, dofParams({ friction: 2 }));
+    spec.actuators = [
+      { name: 'F', body: 0, kind: 'force', frame: 'world', point: [0, 0, 0], vector: [6, 0, 0], profile: () => 1 },
+    ];
+    const plain = run(spec, 1e-3, 1).state;
+
+    expect(withZero.q[0]!).toBe(plain.q[0]!);
+    expect(withZero.v[0]!).toBe(plain.v[0]!);
+  });
+
+  it('settles a chain where one axis holds and another gives way', () => {
+    // Two sliders in series, the second far weaker: the load should break the weak one and
+    // leave the strong one stuck, which only comes out right if the release loop re-solves.
+    const spec = slider(2, dofParams({ stiction: 50 }));
+    spec.bodies.push(bodySpec({ name: 'Second', mass: 1, com: [0, 0, 0] }));
+    spec.hinges.push(
+      hingeSpec({
+        name: 'J2',
+        parent: 0,
+        child: 1,
+        parentNodePos: [0.5, 0, 0],
+        free: [...MASK.slideX],
+        params: [dofParams({ stiction: 0.5 }), ...Array(5).fill(dofParams())],
+      }),
+    );
+    spec.actuators = [
+      { name: 'F', body: 1, kind: 'force', frame: 'world', point: [0, 0, 0], vector: [5, 0, 0], profile: () => 1 },
+    ];
+
+    const { samples } = run(spec, 1e-3, 1);
+    const last = samples[samples.length - 1]!;
+    // The strong first axis never moves; the weak second one does.
+    expect(last.q[0]!).toBe(0);
+    expect(Math.abs(last.q[1]!)).toBeGreaterThan(0.1);
+  });
+});
+
 describe('inertia reference toggle', () => {
   it('gives identical motion whether the tensor is about the CoM or the origin', () => {
     const com = [0.3, -0.2, 0.45];

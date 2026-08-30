@@ -84,6 +84,7 @@ describe('share links', () => {
       rest: 0.2,
       damping: 0.4,
       friction: 0.15,
+      stiction: 0.9,
       limit: { enabled: true, lo: -1.5, hi: 0.8, stiffness: 2500 },
     };
 
