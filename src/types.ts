@@ -142,8 +142,13 @@ export type DofSpec = {
   rest: number;
   /** Viscous damping coefficient, opposing the rate. Zero disables it. */
   damping: number;
-  /** Constant Coulomb-style resistance opposing motion. Zero disables it. */
+  /** Sliding (kinetic) resistance opposing motion. Zero disables it. */
   friction: number;
+  /**
+   * Breakaway (static) force. Below this the axis is held completely still rather than
+   * creeping; above it, the axis breaks free and `friction` takes over. Zero disables it.
+   */
+  stiction: number;
   limit: {
     enabled: boolean;
     lo: number;

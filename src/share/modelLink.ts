@@ -36,8 +36,14 @@ type EncodedBody = [
   visible: 0 | 1,
 ];
 
-/** `[free, q0, u0, k, rest, c, friction, limitOn, lo, hi, limitK]`. */
-type EncodedDof = [0 | 1, number, number, number, number, number, number, 0 | 1, number, number, number];
+/**
+ * `[free, q0, u0, k, rest, c, friction, limitOn, lo, hi, limitK, stiction]`.
+ *
+ * New fields are appended, never inserted. A link written before `stiction` existed simply
+ * has no twelfth entry, which decodes to 0 — disabled, exactly the old behaviour — so older
+ * links keep working without a format-version bump.
+ */
+type EncodedDof = [0 | 1, number, number, number, number, number, number, 0 | 1, number, number, number, number];
 
 type EncodedHinge = [
   name: string,
@@ -149,6 +155,7 @@ export function encodeModel(model: ModelPersisted): string {
           round(d.limit.lo),
           round(d.limit.hi),
           round(d.limit.stiffness),
+          round(d.stiction),
         ]),
       ];
     });
@@ -323,6 +330,7 @@ export function decodeModel(encoded: string): ModelPersisted | null {
         damping: d?.[5],
         friction: d?.[6],
         limit: { enabled: d?.[7] === 1, lo: d?.[8], hi: d?.[9], stiffness: d?.[10] },
+        stiction: d?.[11] ?? 0,
       })),
     };
   });

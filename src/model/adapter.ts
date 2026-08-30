@@ -74,6 +74,7 @@ const dofParamsOf = (hinge: Hinge): DofParams[] =>
     rest: d.rest,
     damping: d.damping,
     friction: d.friction,
+    stiction: d.stiction,
     limitEnabled: d.limit.enabled,
     limitLo: d.limit.lo,
     limitHi: d.limit.hi,

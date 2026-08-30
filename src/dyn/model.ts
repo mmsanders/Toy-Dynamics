@@ -63,6 +63,8 @@ export type DofParams = {
   rest: number;
   damping: number;
   friction: number;
+  /** Breakaway force. Above zero the axis can be held motionless by static friction. */
+  stiction: number;
   limitEnabled: boolean;
   limitLo: number;
   limitHi: number;
@@ -74,6 +76,7 @@ export const NEUTRAL_DOF_PARAMS: DofParams = {
   rest: 0,
   damping: 0,
   friction: 0,
+  stiction: 0,
   limitEnabled: false,
   limitLo: 0,
   limitHi: 0,

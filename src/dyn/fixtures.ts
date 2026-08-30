@@ -146,7 +146,7 @@ export function freeBody(
 }
 
 /** A body on a single prismatic axis — the telescoping-pole case. */
-export function slider(mass: number, params?: DofParams, x0 = 0, v0 = 0): ModelSpec {
+export function slider(mass: number, params?: DofParams, x0 = 0, v0 = 0, gravity = 0): ModelSpec {
   return {
     bodies: [bodySpec({ name: 'Slider', mass, com: [0, 0, 0] })],
     hinges: [
@@ -157,6 +157,6 @@ export function slider(mass: number, params?: DofParams, x0 = 0, v0 = 0): ModelS
         ...(params ? { params: [params, ...Array(5).fill(NEUTRAL_DOF_PARAMS)] } : {}),
       }),
     ],
-    gravity: [0, 0, 0],
+    gravity: [0, 0, -gravity],
   };
 }

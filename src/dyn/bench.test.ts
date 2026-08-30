@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildModel, type ModelSpec } from './model';
+import { buildModel, NEUTRAL_DOF_PARAMS, type ModelSpec } from './model';
 import { makeDynamics } from './forward';
 import { makeStepScratch, step, type State } from './integrate';
 import { bodySpec, hingeSpec, MASK } from './fixtures';
@@ -72,6 +72,24 @@ describe('solver performance', () => {
 
     const freeBodies = timePerStep(chain(5, MASK.free), 'rk4', 2000);
     rows.push(`   5 bodies (30 DOF, all free): RK4 ${freeBodies.toFixed(1)} µs/step`);
+
+    // Static friction, held. A stuck axis is dropped from the system exactly as a locked one
+    // is, so holding a joint should cost *less* than letting it move — the claim the README
+    // makes, measured rather than asserted.
+    const held = chain(10);
+    for (const hinge of held.hinges) {
+      hinge.params = [0, 1, 2, 3, 4, 5].map((i) =>
+        i === 4 ? { ...NEUTRAL_DOF_PARAMS, stiction: 1e6 } : NEUTRAL_DOF_PARAMS,
+      );
+    }
+    const stuck = timePerStep(held, 'rk4', 4000);
+    const moving = timePerStep(chain(10), 'rk4', 4000);
+    rows.push(
+      `  10 bodies, all axes stuck:   RK4 ${stuck.toFixed(1)} µs/step ` +
+        `(vs ${moving.toFixed(1)} moving — ${((stuck / moving) * 100).toFixed(0)}%)`,
+    );
+    // Holding must not be the expensive case.
+    expect(stuck).toBeLessThan(moving * 1.1);
 
     console.log(`\nSolver throughput:\n${rows.join('\n')}\n`);
   });

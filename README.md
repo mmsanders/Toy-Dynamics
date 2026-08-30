@@ -40,7 +40,17 @@ free or locked. That single control covers every joint type: one free rotation i
 one free translation is a telescoping pole, three rotations is a ball joint, all six is a free-
 flying body, none is a weld.
 
-Each free axis can also carry a spring, a damper, constant friction, and travel limits.
+Each free axis can also carry a spring, a damper, travel limits, and friction — both
+**sliding** friction and a **breakaway (static)** force.
+
+Static friction is a real stick/slip constraint rather than a stiff spring. Below the
+breakaway force the axis is held perfectly still by dropping out of the equations, exactly
+the way a locked axis does — so it holds *exactly*, with no creep, and costs less than
+letting it move rather than more. Above it, the axis breaks free and sliding friction takes
+over. The one cost is that stick and slip are decided once per step and held across the
+integrator's stages, so a transition lands one step late; letting the set shift mid-step
+would make the derivative discontinuous, which is the thing Runge-Kutta assumes never
+happens.
 
 **Actuators** attach to a node and apply either a pure force or a pure moment — two different
 things, drawn differently, because a force away from the centre of mass also spins the body
@@ -74,12 +84,20 @@ you before you waste a run finding out.
 
 ### Measured speed
 
+Indicative, from `npm test`'s benchmark on one machine — expect these to move by up to about
+1.5× either way with hardware and load. What matters is the shape: cost grows with DOF, RK4
+costs roughly 4× semi-implicit Euler, and a model of this size recomputes in well under a
+second.
+
 | Model | RK4 | Euler | 10 s run at dt = 1 ms |
 |---|---|---|---|
 | 1 body, 1 DOF | 8.8 µs/step | 4.9 µs/step | 88 ms |
 | 5 bodies, 5 DOF | 29 µs/step | 7.1 µs/step | 290 ms |
 | 10 bodies, 10 DOF | 71 µs/step | 17.5 µs/step | 714 ms |
 | 20 bodies, 20 DOF | 199 µs/step | 48 µs/step | 2.0 s |
+
+Holding a joint with static friction is measured at ~98% the cost of letting it move: a
+stuck axis leaves the system rather than joining it.
 
 Everything runs in the browser. There is no server and nothing to install.
 
@@ -170,6 +188,8 @@ computing the same quantity a different way:
   intermediate-axis flip** — which appears on its own, from the equations, rather than being
   put there;
 - closed-form motion for a prismatic joint under constant force, and `√(k/m)` for a spring;
+- a stuck joint holding a sub-breakaway load with *bit-exact* zero motion, breaking free at
+  the threshold, and a sliding joint coming to rest at the closed-form `v₀²/(2a)`;
 - the same body entered CoM-relative and origin-relative producing identical motion;
 - the mass matrix from CRBA against inverse dynamics, column by column;
 - `F = ma` and `τ = Iα` for actuators, and a body-fixed thruster's cycloid against its closed

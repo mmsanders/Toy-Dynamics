@@ -27,14 +27,23 @@ import { type SV, type V3, sv, v3 } from './spatial';
  */
 
 /**
- * Velocity scale over which Coulomb friction reverses.
+ * Velocity scale over which *sliding* friction reverses.
  *
  * True Coulomb friction is discontinuous at zero, which an explicit integrator turns into
  * chatter — the force flips sign every step and pumps energy in. Regularizing over a small
- * velocity is the standard fix. It does mean this models sliding friction, not stiction: a
- * joint under a small load creeps instead of holding. Said plainly in the UI.
+ * velocity is the standard fix. On its own this models sliding friction only; holding a
+ * loaded joint still is what the stick/slip machinery below is for.
  */
 const FRICTION_VELOCITY_SCALE = 1e-3;
+
+/**
+ * Bound on how many axes may break free in one evaluation.
+ *
+ * Releasing one axis changes the load on every other, so the set has to be settled by
+ * iteration. In practice one or two passes is the whole story; the cap only exists so a
+ * pathological model cannot spin here.
+ */
+const MAX_BREAKAWAY_PASSES = 8;
 
 /** Damping ratio applied at a travel stop, as a fraction of critical for the local inertia. */
 const LIMIT_DAMPING_RATIO = 1.0;
@@ -57,15 +66,41 @@ export type Dynamics = {
   /** True when the last solve hit a non-positive pivot. */
   singular: boolean;
   singularDof: number;
+
+  /**
+   * 1 where an axis is currently held motionless by static friction.
+   *
+   * Frozen for the duration of an integrator step — see `forwardDynamics`'s `settleDt`.
+   */
+  stuck: Uint8Array;
+  /**
+   * True when any axis has a breakaway force set.
+   *
+   * When false every line of the stick/slip machinery is skipped and the solve is the
+   * plain full-rank one, so a model that does not use static friction pays nothing for it.
+   */
+  hasStiction: boolean;
+  /** Force each stuck axis is carrying, from the last solve. Compared against breakaway. */
+  holdForce: Float64Array;
+
+  /** Indices of the axes still free to accelerate, and the reduced system built from them. */
+  freeIndex: Int32Array;
+  reducedH: Float64Array;
+  reducedRhs: Float64Array;
+  reducedAcc: Float64Array;
+  reducedFactor: Factorization;
+  /** Right-hand side, held across the breakaway passes so no pass allocates. */
+  rhsBuffer: Float64Array;
 };
 
 export function makeDynamics(model: MultibodyModel): Dynamics {
+  const nv = model.nv;
   return {
     model,
-    H: new Float64Array(model.nv * model.nv),
-    C: new Float64Array(model.nv),
-    tau: new Float64Array(model.nv),
-    factorization: makeFactorization(model.nv),
+    H: new Float64Array(nv * nv),
+    C: new Float64Array(nv),
+    tau: new Float64Array(nv),
+    factorization: makeFactorization(nv),
     fext: model.links.map(() => null),
     fextStorage: model.links.map(() => sv()),
     kin: makeKinematicsScratch(),
@@ -74,6 +109,16 @@ export function makeDynamics(model: MultibodyModel): Dynamics {
     scratchV: v3(),
     singular: false,
     singularDof: -1,
+
+    stuck: new Uint8Array(nv),
+    hasStiction: model.dofBindings.some((binding) => binding.params.stiction > 0),
+    holdForce: new Float64Array(nv),
+    freeIndex: new Int32Array(nv),
+    reducedH: new Float64Array(nv * nv),
+    reducedRhs: new Float64Array(nv),
+    reducedAcc: new Float64Array(nv),
+    reducedFactor: makeFactorization(nv),
+    rhsBuffer: new Float64Array(nv),
   };
 }
 
@@ -148,7 +193,12 @@ function jointForces(d: Dynamics, q: Float64Array, v: Float64Array): void {
     let force = 0;
 
     if (p.damping !== 0) force -= p.damping * rate;
-    if (p.friction !== 0) force -= p.friction * Math.tanh(rate / FRICTION_VELOCITY_SCALE);
+    // Sliding friction is skipped on a stuck axis: there the friction force is not a known
+    // quantity but the unknown the constraint solves for, and adding a sliding term as well
+    // would double-count it and corrupt the breakaway test.
+    if (p.friction !== 0 && !d.stuck[i]) {
+      force -= p.friction * Math.tanh(rate / FRICTION_VELOCITY_SCALE);
+    }
 
     if (binding.qIndex >= 0) {
       const value = q[binding.qIndex]!;
@@ -170,12 +220,105 @@ function jointForces(d: Dynamics, q: Float64Array, v: Float64Array): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Static friction
+// ---------------------------------------------------------------------------
+
+/**
+ * Which axes are slow enough for static friction to arrest them this step.
+ *
+ * The threshold is derived rather than picked: `μ/H_ii · dt` is exactly the velocity change
+ * the breakaway force can produce in one step, so an axis moving slower than that would be
+ * stopped within the step anyway. That makes the criterion scale-free — it needs no absolute
+ * velocity constant, and so it means the same thing whether the model is in millimetres or
+ * kilometres, which matters in a tool that enforces no units.
+ */
+function stickCandidates(d: Dynamics, v: Float64Array, dt: number): void {
+  const nv = d.model.nv;
+  for (let i = 0; i < nv; i++) {
+    if (d.stuck[i]) continue;
+    const breakaway = d.model.dofBindings[i]!.params.stiction;
+    if (breakaway <= 0) continue;
+    const effectiveMass = Math.max(d.H[i * nv + i]!, 1e-30);
+    if (Math.abs(v[i]!) <= (breakaway / effectiveMass) * dt) d.stuck[i] = 1;
+  }
+}
+
+/**
+ * Solve `H·q̈ = rhs` with the stuck axes pinned to zero acceleration.
+ *
+ * This is where reduced coordinates pay off twice. A stuck axis is simply dropped from the
+ * system — the same thing a locked axis is — so holding a joint still costs *less* than
+ * letting it move, not more. And the force it has to carry to stay still falls straight out
+ * of its own row afterwards:
+ *
+ *     H·q̈ + C = τ + f_hold   ⟹   f_hold = (H·q̈) − rhs
+ *
+ * which is the quantity the breakaway test needs. No penalty spring, no extra stiffness, and
+ * nothing that forces a smaller timestep.
+ */
+function solveConstrained(d: Dynamics, rhs: Float64Array, qdd: Float64Array): void {
+  const nv = d.model.nv;
+
+  let nf = 0;
+  for (let i = 0; i < nv; i++) if (!d.stuck[i]) d.freeIndex[nf++] = i;
+
+  if (nf === nv) {
+    factorize(d.H, d.factorization);
+    d.singular = d.factorization.failedAt >= 0;
+    d.singularDof = d.factorization.failedAt;
+    solveFactorized(d.factorization, rhs, qdd);
+    return;
+  }
+
+  for (let a = 0; a < nf; a++) {
+    const row = d.freeIndex[a]! * nv;
+    for (let b = 0; b < nf; b++) d.reducedH[a * nf + b] = d.H[row + d.freeIndex[b]!]!;
+    d.reducedRhs[a] = rhs[d.freeIndex[a]!]!;
+  }
+
+  // The factorization's buffers are sized for the full system; narrowing `n` reuses them
+  // for the reduced one without allocating.
+  d.reducedFactor.n = nf;
+  factorize(d.reducedH, d.reducedFactor);
+  d.singular = d.reducedFactor.failedAt >= 0;
+  d.singularDof = d.singular ? (d.freeIndex[d.reducedFactor.failedAt]! ?? -1) : -1;
+  solveFactorized(d.reducedFactor, d.reducedRhs, d.reducedAcc);
+
+  qdd.fill(0);
+  for (let a = 0; a < nf; a++) qdd[d.freeIndex[a]!] = d.reducedAcc[a]!;
+
+  for (let i = 0; i < nv; i++) {
+    if (!d.stuck[i]) {
+      d.holdForce[i] = 0;
+      continue;
+    }
+    let acc = 0;
+    const row = i * nv;
+    for (let a = 0; a < nf; a++) acc += d.H[row + d.freeIndex[a]!]! * d.reducedAcc[a]!;
+    d.holdForce[i] = acc - rhs[i]!;
+  }
+}
+
+/** Zero the velocity of every stuck axis, so a held joint holds exactly rather than creeping. */
+export function zeroStuckVelocities(d: Dynamics, v: Float64Array): void {
+  if (!d.hasStiction) return;
+  for (let i = 0; i < d.model.nv; i++) if (d.stuck[i]) v[i] = 0;
+}
+
 /**
  * Evaluate `q̈` for a state.
  *
  * Order matters: kinematics and velocities first (both the mass matrix and the bias forces
  * read them), then H, then the joint forces — which need H's diagonal for the stop damping
  * — then the bias forces, then the solve.
+ *
+ * `settleDt` is the integrator's step when this evaluation is allowed to *change* which axes
+ * are stuck, and zero when it must reuse the set it was given. Stick and slip are decided
+ * once per step and then held for every stage of it: a set that changed between stages would
+ * make the derivative function discontinuous mid-step, which is precisely the thing a
+ * Runge-Kutta method assumes never happens. The cost is that a transition lands one step
+ * late, which at this fidelity is not worth chasing.
  */
 export function forwardDynamics(
   d: Dynamics,
@@ -183,25 +326,61 @@ export function forwardDynamics(
   v: Float64Array,
   t: number,
   qdd: Float64Array,
+  settleDt = 0,
 ): void {
   const { model } = d;
-  if (model.nv === 0) return;
+  const nv = model.nv;
+  if (nv === 0) return;
 
   updateKinematics(model, q, v, d.kin);
   updateVelocities(model, d.kin);
-
   crba(model, d.H, d.crbaScratch);
-  jointForces(d, q, v);
+
+  // Fast path: no breakaway forces anywhere, so none of the machinery below can apply.
+  if (!d.hasStiction) {
+    jointForces(d, q, v);
+    applyActuators(d, t);
+    rnea(model, null, d.fext, d.C, d.rneaScratch);
+    const rhs = qdd;
+    for (let i = 0; i < nv; i++) rhs[i] = d.tau[i]! - d.C[i]!;
+    factorize(d.H, d.factorization);
+    d.singular = d.factorization.failedAt >= 0;
+    d.singularDof = d.factorization.failedAt;
+    solveFactorized(d.factorization, rhs, qdd);
+    return;
+  }
+
+  if (settleDt > 0) stickCandidates(d, v, settleDt);
+
+  // The bias forces and actuator loads do not depend on which axes are stuck, so they are
+  // computed once and reused across the breakaway passes; only the joint-local forces and
+  // the solve are repeated.
   applyActuators(d, t);
   rnea(model, null, d.fext, d.C, d.rneaScratch);
 
-  const rhs = qdd;
-  for (let i = 0; i < model.nv; i++) rhs[i] = d.tau[i]! - d.C[i]!;
+  const rhs = d.rhsBuffer;
+  for (let pass = 0; ; pass++) {
+    jointForces(d, q, v);
+    for (let i = 0; i < nv; i++) rhs[i] = d.tau[i]! - d.C[i]!;
+    solveConstrained(d, rhs, qdd);
 
-  factorize(d.H, d.factorization);
-  d.singular = d.factorization.failedAt >= 0;
-  d.singularDof = d.factorization.failedAt;
-  solveFactorized(d.factorization, rhs, qdd);
+    if (settleDt <= 0) return;
+
+    // Release the axis most over its breakaway force, then re-solve: letting one go changes
+    // the load on the rest, so they cannot all be judged from a single solve.
+    let worst = -1;
+    let excess = 0;
+    for (let i = 0; i < nv; i++) {
+      if (!d.stuck[i]) continue;
+      const over = Math.abs(d.holdForce[i]!) - d.model.dofBindings[i]!.params.stiction;
+      if (over > excess) {
+        excess = over;
+        worst = i;
+      }
+    }
+    if (worst < 0 || pass >= MAX_BREAKAWAY_PASSES) return;
+    d.stuck[worst] = 0;
+  }
 }
 
 // ---------------------------------------------------------------------------

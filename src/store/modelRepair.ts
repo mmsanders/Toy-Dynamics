@@ -112,6 +112,7 @@ function repairDof(value: unknown): DofSpec {
     rest: num(raw.rest, 0),
     damping: num(raw.damping, 0),
     friction: num(raw.friction, 0),
+    stiction: num(raw.stiction, 0),
     limit: {
       enabled: bool(limit.enabled, false),
       lo: num(limit.lo, -1),

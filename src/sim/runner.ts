@@ -77,7 +77,7 @@ function isPassive(input: RunInput): boolean {
   for (const hinge of Object.values(input.hinges)) {
     for (const dof of hinge.dof) {
       if (!dof.free) continue;
-      if (dof.damping !== 0 || dof.friction !== 0) return false;
+      if (dof.damping !== 0 || dof.friction !== 0 || dof.stiction !== 0) return false;
       if (dof.limit.enabled && dof.limit.stiffness > 0) return false;
     }
   }

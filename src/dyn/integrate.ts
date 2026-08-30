@@ -1,5 +1,5 @@
 import type { MultibodyModel } from './model';
-import { type Dynamics, forwardDynamics } from './forward';
+import { type Dynamics, forwardDynamics, zeroStuckVelocities } from './forward';
 import { jointQDot, normalizeJointQ } from './joints';
 
 /**
@@ -94,7 +94,8 @@ export function step(
   if (integrator === 'euler') {
     // Semi-implicit: the position update uses the *new* velocity, which is what makes it
     // symplectic and is the entire reason to prefer it over explicit Euler.
-    forwardDynamics(d, q, v, t, s.aA);
+    forwardDynamics(d, q, v, t, s.aA, dt);
+    zeroStuckVelocities(d, v);
     for (let i = 0; i < nv; i++) v[i] = v[i]! + dt * s.aA[i]!;
     qDot(model, q, v, s.qDotA);
     for (let i = 0; i < nq; i++) q[i] = q[i]! + dt * s.qDotA[i]!;
@@ -103,7 +104,8 @@ export function step(
   }
 
   if (integrator === 'rk2') {
-    forwardDynamics(d, q, v, t, s.aA);
+    forwardDynamics(d, q, v, t, s.aA, dt);
+    zeroStuckVelocities(d, v);
     qDot(model, q, v, s.qDotA);
 
     const half = dt / 2;
@@ -123,7 +125,11 @@ export function step(
   // RK4.
   const half = dt / 2;
 
-  forwardDynamics(d, q, v, t, s.aA);
+  // Only this first evaluation is allowed to change which axes are stuck; the remaining
+  // three reuse that set. A set that shifted between stages would make the derivative
+  // discontinuous mid-step, which is exactly what a Runge-Kutta method assumes never happens.
+  forwardDynamics(d, q, v, t, s.aA, dt);
+  zeroStuckVelocities(d, v);
   qDot(model, q, v, s.qDotA);
 
   for (let i = 0; i < nq; i++) s.qA[i] = q[i]! + half * s.qDotA[i]!;
