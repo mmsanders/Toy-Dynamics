@@ -1,0 +1,65 @@
+name: CI
+
+# Deploy only runs on main, so without this a pull request would get no validation at all.
+#
+# Pull requests only, deliberately. Adding a `push` trigger as well fires both events for
+# the same commit, and no concurrency key fixes that cleanly: grouping them together makes
+# one run cancel the other, and a *cancelled* check run still attaches to the commit and
+# shows up on the pull request as not passing. One trigger, one set of checks.
+#
+# This also tests the right thing: a pull_request run builds the merge of the branch into
+# main, so it catches a conflict with main that building the branch alone would miss.
+on:
+  pull_request:
+  workflow_dispatch:
+
+# Now that only one event fires, github.ref is stable per pull request — so a rapid second
+# push supersedes the first run rather than leaving both to finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The runner has no preinstalled browser, and PLAYWRIGHT_BROWSERS_PATH is unset
+      # here, so playwright.config.ts leaves executablePath undefined and Playwright
+      # manages its own matching build.
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - run: npm run test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 7

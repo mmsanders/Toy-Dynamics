@@ -1,0 +1,816 @@
+/* ---------------------------------------------------------------------------
+   Toy Dynamics panel components.
+
+   The shell, the sheet, the tabs and the primitives come from ui.css, vendored from
+   Rotation Wizard. Everything specific to this app lives here, using the same tokens, so
+   the two files stay easy to diff and the vendored one can be refreshed without merging.
+   --------------------------------------------------------------------------- */
+
+/* --- sections -------------------------------------------------------------- */
+
+.section {
+  margin: 0 0 14px;
+}
+
+.section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 2px 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+
+.section__head h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.section__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* --- list rows ------------------------------------------------------------- */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--tap);
+  padding-right: 4px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+}
+
+.row.is-active {
+  background: var(--panel-raised);
+  border-color: var(--border-strong);
+}
+
+.row__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: 0;
+  padding: 6px 0;
+  text-align: left;
+}
+
+.row__swatch {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+
+.row__label {
+  flex: 0 1 auto;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row__detail {
+  flex: 0 1 auto;
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row__actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 2px;
+}
+
+.icon-button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.icon-button:hover:not(:disabled) {
+  background: var(--panel-sunken);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.icon-button.is-active {
+  color: var(--text-faint);
+}
+
+.icon-button.is-danger:hover:not(:disabled) {
+  color: #f87171;
+  border-color: #f87171;
+}
+
+.icon-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* --- inputs ---------------------------------------------------------------- */
+
+.text-field,
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.text-field__label,
+.picker__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.text-field__input {
+  min-height: var(--tap);
+  width: 100%;
+  padding: 0 10px;
+  background: var(--panel-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+}
+
+.picker__select {
+  min-height: var(--tap);
+  width: 100%;
+  padding: 0 32px 0 10px;
+  background: var(--panel-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-dim) 50%),
+    linear-gradient(135deg, var(--text-dim) 50%, transparent 50%);
+  background-position: calc(100% - 17px) 50%, calc(100% - 12px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.toggle__label {
+  font-size: 14px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.toggle__hint {
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--text-faint);
+}
+
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ghost-button {
+  min-height: 34px;
+  padding: 0 12px;
+  background: var(--panel-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.ghost-button:hover {
+  color: var(--text);
+  border-color: var(--accent-dim);
+}
+
+.ghost-button.is-active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.ghost-button.is-danger:hover {
+  color: #f87171;
+  border-color: #f87171;
+}
+
+.primary-button {
+  min-height: var(--tap);
+  width: 100%;
+  padding: 0 14px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.primary-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.note--warn {
+  color: var(--warn);
+}
+
+.note em {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* --- nodes and degrees of freedom ------------------------------------------ */
+
+.node,
+.dof {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-sunken);
+}
+
+.dof.is-free {
+  border-color: var(--border-strong);
+}
+
+.node__summary,
+.dof__summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--tap);
+  padding: 0 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.node__summary::-webkit-details-marker,
+.dof__summary::-webkit-details-marker {
+  display: none;
+}
+
+.node__name {
+  font-size: 14px;
+}
+
+.dof__axis {
+  font-size: 11px;
+  margin-left: auto;
+  text-align: right;
+  opacity: 0.8;
+}
+
+.tag {
+  font-size: 10px;
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--text-faint);
+}
+
+.node__body,
+.dof__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 10px 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* --- rotation editor ------------------------------------------------------- */
+
+.rotation {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.rotation__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rotation__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* --- expression editor ----------------------------------------------------- */
+
+.expr {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.expr__input {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.expr__input.is-invalid {
+  border-color: #f87171;
+}
+
+.expr__error {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: #f87171;
+}
+
+.expr__caret {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1;
+  /* Aligned with the input's text inset so the caret lands under the character. */
+  padding-left: 11px;
+  color: #f87171;
+}
+
+.expr__help {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.expr__help summary {
+  cursor: pointer;
+  color: var(--text-dim);
+}
+
+.expr__help p {
+  margin: 6px 0 0;
+  line-height: 1.5;
+}
+
+.expr__help code {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 1px 4px;
+  background: var(--panel-sunken);
+  border-radius: 3px;
+  color: var(--text-dim);
+}
+
+.expr__functions {
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+/* --- sparkline ------------------------------------------------------------- */
+
+.sparkline {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--panel-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.sparkline svg {
+  display: block;
+  width: 100%;
+  height: 44px;
+}
+
+.sparkline__line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.sparkline__zero {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.sparkline figcaption {
+  margin-top: 4px;
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--text-faint);
+}
+
+/* --- plots ----------------------------------------------------------------- */
+
+.plot-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.plot-group__toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 5px;
+  font-size: 11px;
+  font-family: var(--mono);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.chip input {
+  width: 13px;
+  height: 13px;
+  accent-color: var(--accent);
+}
+
+.chip__swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.plot {
+  margin: 0;
+  background: var(--panel-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 8px 4px;
+  overflow: hidden;
+}
+
+.plot__title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 2px;
+}
+
+.plot__unit {
+  font-family: var(--mono);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-faint);
+}
+
+.plot__svg {
+  display: block;
+  touch-action: none;
+}
+
+/* Hairline, solid. Dashing would read as a threshold rather than a grid. */
+.plot__grid {
+  stroke: var(--border);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.plot__tick {
+  fill: var(--text-faint);
+  font-size: 9px;
+  font-family: var(--mono);
+}
+
+.plot__tick--y {
+  text-anchor: end;
+  dominant-baseline: middle;
+}
+
+.plot__tick--x {
+  text-anchor: middle;
+}
+
+.plot__line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.plot__playhead {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+
+.plot__crosshair {
+  stroke: var(--text-faint);
+  stroke-width: 1;
+}
+
+/* A surface ring rather than a border, so overlapping markers stay separable. */
+.plot__marker,
+.plot__endpoint {
+  stroke: var(--panel-sunken);
+  stroke-width: 2;
+}
+
+.plot__values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 4px 2px 2px;
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--text-faint);
+}
+
+.plot__time {
+  color: var(--text-dim);
+}
+
+.plot__value {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.plot__value b {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.plot__swatch {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+}
+
+.plot--empty .plot__empty {
+  margin: 0;
+  padding: 16px 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legend__swatch {
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+/* --- scrubber -------------------------------------------------------------- */
+
+.scrubber {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+}
+
+.scrubber__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scrubber__play {
+  flex: 0 0 auto;
+  width: var(--tap);
+  height: var(--tap);
+  display: grid;
+  place-items: center;
+  background: var(--panel-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.scrubber__track {
+  flex: 1 1 auto;
+  min-width: 0;
+  accent-color: var(--accent);
+  height: 24px;
+}
+
+.scrubber__time {
+  flex: 0 0 auto;
+  min-width: 54px;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* How much of the run has streamed in so far. */
+.scrubber__buffer {
+  position: absolute;
+  left: calc(var(--tap) + 8px);
+  bottom: -2px;
+  height: 2px;
+  background: var(--accent-dim);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.status__chip {
+  font-size: 10px;
+  font-family: var(--mono);
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-faint);
+}
+
+/* --- diagnostics banner ---------------------------------------------------- */
+
+.banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 4;
+  background: rgba(18, 23, 34, 0.96);
+  border-bottom: 1px solid var(--border-strong);
+  backdrop-filter: blur(8px);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.app--desktop .banner {
+  right: 396px;
+}
+
+.banner__summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 38px;
+  padding: 0 12px;
+  background: none;
+  border: 0;
+  text-align: left;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.banner__dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.banner__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.banner__count,
+.banner__chevron {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.banner__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.finding {
+  padding: 10px;
+  background: var(--panel-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.finding__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+}
+
+.finding__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.finding__detail {
+  margin: 6px 0 8px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.finding__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* --- topbar ---------------------------------------------------------------- */
+
+.topbar__status {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
