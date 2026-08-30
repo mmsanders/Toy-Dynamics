@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { SceneCanvas } from './scene/SceneCanvas';
 import { Panel } from './ui/Panel';
 import { WarningBanner } from './ui/WarningBanner';
+import { ImportBanner } from './ui/ImportBanner';
 import { DESKTOP_QUERY, useMediaQuery } from './ui/useMediaQuery';
 import { useSimulation } from './sim/useSimulation';
 import { usePlayback } from './sim/usePlayback';
@@ -54,6 +55,7 @@ export function App() {
       )}
 
       <WarningBanner />
+      <ImportBanner />
 
       <Panel
         trajectory={simulation.trajectory}

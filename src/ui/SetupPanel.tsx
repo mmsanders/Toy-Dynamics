@@ -1,5 +1,7 @@
 import type { Integrator, UnitSystem, Vec3 } from '../types';
-import { useModelStore } from '../store/useModelStore';
+import { modelSnapshot, useModelStore } from '../store/useModelStore';
+import { modelLink } from '../share/modelLink';
+import { useCopy } from './useCopy';
 import { EULER_ORDERS, describeSequence } from '../math/conventions';
 import { UNIT_SYSTEMS, standardGravityVector, unitLabel } from '../units';
 import { AXIS_COLORS } from '../theme';
@@ -32,6 +34,7 @@ export function SetupPanel() {
   const setUnits = useModelStore((s) => s.setUnits);
   const setConventions = useModelStore((s) => s.setConventions);
   const resetModel = useModelStore((s) => s.resetModel);
+  const [status, copy] = useCopy();
 
   const system = UNIT_SYSTEMS[settings.units];
   const accelerationUnit = unitLabel(settings.units, 'acceleration');
@@ -176,6 +179,21 @@ export function SetupPanel() {
           onChange={(rotationMode) => setConventions({ rotationMode })}
         />
         <Note>Currently reading orientations as {describeSequence(conventions)}.</Note>
+      </Section>
+
+      <Section title="Share">
+        <button
+          type="button"
+          className="primary-button"
+          onClick={() => copy('link', modelLink(modelSnapshot(useModelStore.getState())))}
+        >
+          {status?.key === 'link' ? (status.ok ? 'Link copied' : 'No clipboard') : 'Copy a link to this model'}
+        </button>
+        <Note>
+          The whole model travels in the link — bodies, hinges, actuators and settings — so a
+          setup moves between a phone and a desktop. Opening one never destroys what you had:
+          the replaced model sits behind an Undo.
+        </Note>
       </Section>
 
       <Section title="Model">
