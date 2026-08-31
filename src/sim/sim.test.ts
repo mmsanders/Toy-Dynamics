@@ -57,6 +57,18 @@ describe('trajectory runner', () => {
     expect(0.02 / run.meta.dt).toBeCloseTo(Math.round(0.02 / run.meta.dt), 12);
   });
 
+  it('never increases the requested integration timestep when snapping to samples', () => {
+    const input = baseInput();
+    // At 100 Hz the sample interval is 10 ms. Nearest-integer rounding would use one
+    // 10 ms step here, substantially exceeding the requested 6 ms maximum.
+    input.settings = { ...input.settings, dt: 0.006, duration: 0.1, sampleRate: 100 };
+    const run = complete(input);
+
+    expect(run.meta.dt).toBeLessThanOrEqual(input.settings.dt);
+    expect(run.meta.dt).toBeCloseTo(0.005, 12);
+    expect(run.meta.sampleInterval / run.meta.dt).toBeCloseTo(2, 12);
+  });
+
   it('is resumable in small budgets without changing the answer', () => {
     const input = baseInput();
     input.settings = { ...input.settings, duration: 1 };

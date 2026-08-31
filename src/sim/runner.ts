@@ -106,7 +106,12 @@ export function createRun(input: RunInput): Run | { error: string } {
   // Snap the step so a whole number of them lands exactly on each sample. Keeping samples
   // on an exact grid matters more than honouring the requested dt to the last digit — a
   // drifting sample time makes plots and CSV subtly wrong to compare against another tool.
-  const stepsPerSample = Math.max(1, Math.round(sampleInterval / Math.max(settings.dt, 1e-12)));
+  // `dt` is a maximum stability/accuracy step, not a target that may be rounded in either
+  // direction. Rounding the ratio could make the actual step almost 50% larger than the
+  // value the user selected (for example, 6 ms on a 10 ms sample grid became 10 ms). That
+  // silently invalidates both the user's convergence choice and the timestep diagnostic.
+  // Ceiling the ratio still lands exactly on every sample while never taking a larger step.
+  const stepsPerSample = Math.max(1, Math.ceil(sampleInterval / Math.max(settings.dt, 1e-12)));
   const dt = sampleInterval / stepsPerSample;
   const frameCount = Math.max(1, Math.floor(settings.duration / sampleInterval) + 1);
 
