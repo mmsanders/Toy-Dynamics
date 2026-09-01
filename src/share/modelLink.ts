@@ -74,8 +74,8 @@ type EncodedModel = {
   a: EncodedActuator[];
   /** `[name, body, node, radius, stiffness, damping, enabled]`. */
   cs?: [string, number, number, number, number, number, 0 | 1][];
-  /** `[name, point, normal, stiffness, damping, enabled]`. */
-  cp?: [string, number[], number[], number, number, 0 | 1][];
+  /** `[name, point, normal, stiffness, damping, enabled, displaySize?]`. */
+  cp?: [string, number[], number[], number, number, 0 | 1, number?][];
   /** `[units, gx, gy, gz, dt, duration, integrator, sampleRate]`. */
   s: [string, number, number, number, number, number, string, number];
   /** `[upAxis, eulerOrder, rotationMode, angleUnit]`. */
@@ -198,7 +198,8 @@ export function encodeModel(model: ModelPersisted): string {
       const plane = model.contactPlanes[id];
       if (!plane) return [];
       return [[plane.name, roundAll(plane.point), roundAll(plane.normal),
-        round(plane.material.stiffness), round(plane.material.damping), plane.enabled ? 1 : 0]];
+        round(plane.material.stiffness), round(plane.material.damping), plane.enabled ? 1 : 0,
+        round(plane.size)]];
     }),
     s: [
       model.settings.units,
@@ -389,6 +390,7 @@ export function decodeModel(encoded: string): ModelPersisted | null {
     contactPlanes[id] = {
       name: plane?.[0], point: plane?.[1], normal: plane?.[2],
       material: { stiffness: plane?.[3], damping: plane?.[4] }, enabled: plane?.[5] !== 0,
+      size: plane?.[6],
     };
   });
 

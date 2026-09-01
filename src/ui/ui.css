@@ -886,10 +886,27 @@
    Narrow phones
    --------------------------------------------------------------------------- */
 
-@media (max-width: 400px) {
-  /* Four tabs in 390px: trim the type rather than let labels wrap or clip. */
+@media (max-width: 600px) {
+  /* Keep one extensible row instead of squeezing or wrapping tab labels. A partially
+     visible next tab makes the horizontal scroll discoverable on touch screens. */
+  .tabs {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
   .tabs__tab {
+    flex: 0 0 auto;
+    min-width: 84px;
+    padding: 0 10px;
     font-size: 13px;
+    scroll-snap-align: start;
   }
 
   .framerow__meta {

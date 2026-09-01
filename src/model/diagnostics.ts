@@ -1,5 +1,5 @@
-import { GROUND_ID, type Actuator, type Body, type Hinge, type SimSettings, type UnitSystem, type Vec3 } from '../types';
-import { buildModel } from '../dyn/model';
+import { GROUND_ID, type Actuator, type Body, type ContactPlane, type ContactSphere, type Hinge, type SimSettings, type UnitSystem, type Vec3 } from '../types';
+import { buildModel, pointToWorld } from '../dyn/model';
 import { makeDynamics } from '../dyn/forward';
 import { crba, factorize } from '../dyn/crba';
 import { updateKinematics, updateVelocities } from '../dyn/model';
@@ -7,6 +7,7 @@ import { checkInertia, tensorOf } from '../dyn/inertia';
 import { makeJointModel, rotationalAxisSeparation } from '../dyn/joints';
 import { buildSpec } from './adapter';
 import { DOF_LABELS } from '../types';
+import { m3, v3 } from '../dyn/spatial';
 import {
   STANDARD_GRAVITY_IMPERIAL,
   STANDARD_GRAVITY_SI,
@@ -83,6 +84,8 @@ export function runDiagnostics(
   hinges: Record<string, Hinge>,
   actuators: Record<string, Actuator>,
   settings: SimSettings,
+  contactSpheres: Record<string, ContactSphere> = {},
+  contactPlanes: Record<string, ContactPlane> = {},
 ): Diagnostic[] {
   const out: Diagnostic[] = [];
   const system = UNIT_SYSTEMS[settings.units];
@@ -90,7 +93,46 @@ export function runDiagnostics(
   const lengthUnit = unitLabel(settings.units, 'length');
   const inertiaUnit = unitLabel(settings.units, 'inertia');
 
-  const built = buildSpec(bodies, hinges, actuators, settings);
+  const built = buildSpec(bodies, hinges, actuators, settings, contactSpheres, contactPlanes);
+
+  // Contact data is deliberately editable even when implausible; diagnose it before the
+  // compiler clamps invalid values or drops a plane with no usable normal.
+  for (const sphere of Object.values(contactSpheres)) {
+    if (sphere.radius < 0) {
+      out.push({
+        id: `contact-radius:${sphere.id}`,
+        severity: 'warning',
+        title: `${sphere.name} has a negative radius`,
+        detail: 'The solver treats it as zero. Use zero explicitly for a point contact, or enter a positive sphere radius.',
+      });
+    }
+    if (sphere.material.stiffness < 0 || sphere.material.damping < 0) {
+      out.push({
+        id: `contact-material:sphere:${sphere.id}`,
+        severity: 'warning',
+        title: `${sphere.name} has a negative contact property`,
+        detail: 'Negative stiffness and damping are not physical and are clamped to zero by the solver.',
+      });
+    }
+  }
+  for (const plane of Object.values(contactPlanes)) {
+    if (!(Math.hypot(...plane.normal) > 1e-12)) {
+      out.push({
+        id: `contact-normal:${plane.id}`,
+        severity: 'warning',
+        title: `${plane.name} has no normal`,
+        detail: 'A plane needs a non-zero allowed-side normal. This plane is ignored by the solver.',
+      });
+    }
+    if (plane.material.stiffness < 0 || plane.material.damping < 0) {
+      out.push({
+        id: `contact-material:plane:${plane.id}`,
+        severity: 'warning',
+        title: `${plane.name} has a negative contact property`,
+        detail: 'Negative stiffness and damping are not physical and are clamped to zero by the solver.',
+      });
+    }
+  }
 
   // --- structural problems surfaced by the build -----------------------------------
   for (const problem of built.problems ?? []) {
@@ -316,6 +358,48 @@ export function runDiagnostics(
       updateVelocities(model, dynamics.kin);
       crba(model, dynamics.H, dynamics.crbaScratch);
 
+      // Report initial overlap using the exact compiled geometry and initial kinematics.
+      // Starting compressed is supported, but it opens with an impulsive-looking spring load.
+      const spherePositions = model.contactSpheres.map((sphere) =>
+        pointToWorld(model.links[sphere.link]!, sphere.point, v3(), m3()),
+      );
+      for (let i = 0; i < model.contactSpheres.length; i++) {
+        const sphere = model.contactSpheres[i]!;
+        const position = spherePositions[i]!;
+        for (const plane of model.contactPlanes) {
+          const separation =
+            plane.normal[0]! * (position[0]! - plane.point[0]!) +
+            plane.normal[1]! * (position[1]! - plane.point[1]!) +
+            plane.normal[2]! * (position[2]! - plane.point[2]!) - sphere.radius;
+          if (separation < 0) {
+            out.push({
+              id: `contact-overlap:plane:${i}:${plane.name}`,
+              severity: 'warning',
+              title: `${sphere.name} starts inside ${plane.name}`,
+              detail: `Initial penetration is ${formatNumber(-separation)} ${lengthUnit}, so the contact spring is already loaded at t = 0.`,
+            });
+          }
+        }
+      }
+      for (let i = 0; i < model.contactSpheres.length; i++) {
+        for (let j = i + 1; j < model.contactSpheres.length; j++) {
+          const a = model.contactSpheres[i]!;
+          const b = model.contactSpheres[j]!;
+          if (a.link === b.link) continue;
+          const pa = spherePositions[i]!;
+          const pb = spherePositions[j]!;
+          const penetration = a.radius + b.radius - Math.hypot(pa[0]! - pb[0]!, pa[1]! - pb[1]!, pa[2]! - pb[2]!);
+          if (penetration > 0) {
+            out.push({
+              id: `contact-overlap:spheres:${i}:${j}`,
+              severity: 'warning',
+              title: `${a.name} and ${b.name} start overlapped`,
+              detail: `Initial penetration is ${formatNumber(penetration)} ${lengthUnit}, so their contact spring is already loaded at t = 0.`,
+            });
+          }
+        }
+      }
+
       const n = model.nv;
       // Singularity: a non-positive pivot names the exact coordinate that went degenerate,
       // which is far more actionable than "the solve failed".
@@ -372,6 +456,29 @@ export function runDiagnostics(
             `${worstLabel} oscillates at ${formatNumber(worstOmega)} rad per unit time, which needs a step below ` +
             `${formatNumber(suggested)} to resolve. At ${formatNumber(settings.dt)} the motion will be wrong and may ` +
             'diverge. Travel stops are the usual culprit — they are stiff by design.',
+          target: { kind: 'settings', id: 'dt' },
+          fix: { label: `Use dt = ${formatNumber(suggested)}`, kind: 'setTimestep', value: suggested },
+        });
+      }
+
+      // Conservative contact estimate: the lightest participating body mass bounds the
+      // effective normal mass from above. It errs toward a smaller, safer suggested step.
+      let contactOmega = 0;
+      let contactLabel = '';
+      for (const sphere of model.contactSpheres) {
+        const mass = Math.max(model.links[sphere.link]!.mass, 1e-30);
+        for (const plane of model.contactPlanes) {
+          const omega = Math.sqrt(Math.min(sphere.stiffness, plane.stiffness) / mass);
+          if (omega > contactOmega) { contactOmega = omega; contactLabel = `${sphere.name} against ${plane.name}`; }
+        }
+      }
+      if (contactOmega * settings.dt > STIFFNESS_STEP_LIMIT) {
+        const suggested = STIFFNESS_STEP_LIMIT / contactOmega;
+        out.push({
+          id: 'contact-stiff-timestep',
+          severity: 'warning',
+          title: 'Timestep is too large for contact stiffness',
+          detail: `${contactLabel} needs a step near or below ${formatNumber(suggested)}. This conservative estimate uses body mass and may over-warn for an off-centre contact.`,
           target: { kind: 'settings', id: 'dt' },
           fix: { label: `Use dt = ${formatNumber(suggested)}`, kind: 'setTimestep', value: suggested },
         });

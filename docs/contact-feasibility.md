@@ -7,8 +7,9 @@ define body-fixed spheres and any number of one-sided fixed world planes; sphere
 sphere-sphere pairs generate compliant normal forces, multiple contacts accumulate, and the
 active set is frozen across Runge-Kutta stages. Canonical model storage, repair, share-link
 persistence, model adaptation, and worker-runner transport are also wired. Sphere and plane
-editing and scene visualization are now available in the application UI. Contact-specific
-diagnostics and friction remain Phase 2/3 work.
+editing and scene visualization are now available in the application UI. Diagnostics cover
+invalid geometry and material values, initial overlap, and contact stiffness versus timestep.
+Friction remains Phase 3 work.
 
 ## Decision
 

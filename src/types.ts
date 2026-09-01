@@ -246,6 +246,8 @@ export type ContactPlane = {
   name: string;
   point: Vec3;
   normal: Vec3;
+  /** Width of the square scene patch. Contact remains an infinite analytical plane. */
+  size: number;
   material: ContactMaterial;
   enabled: boolean;
 };

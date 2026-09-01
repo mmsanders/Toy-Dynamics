@@ -23,6 +23,8 @@ export function WarningBanner() {
   const hinges = useModelStore((s) => s.hinges);
   const actuators = useModelStore((s) => s.actuators);
   const settings = useModelStore((s) => s.settings);
+  const contactSpheres = useModelStore((s) => s.contactSpheres);
+  const contactPlanes = useModelStore((s) => s.contactPlanes);
   const applyFix = useModelStore((s) => s.applyFix);
   const selectBody = useModelStore((s) => s.selectBody);
   const selectHinge = useModelStore((s) => s.selectHinge);
@@ -32,9 +34,9 @@ export function WarningBanner() {
   const [open, setOpen] = useState(false);
 
   const diagnostics = useMemo(() => {
-    const found = runDiagnostics(bodies, hinges, actuators, settings);
+    const found = runDiagnostics(bodies, hinges, actuators, settings, contactSpheres, contactPlanes);
     return found.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
-  }, [bodies, hinges, actuators, settings]);
+  }, [bodies, hinges, actuators, settings, contactSpheres, contactPlanes]);
 
   const active = diagnostics.filter((d) => !dismissed.has(d.id));
   if (active.length === 0) return null;

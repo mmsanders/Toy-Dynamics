@@ -66,7 +66,8 @@ export function ContactPanel() {
           <TextField label="Name" value={plane.name} onChange={(name) => setPlane(plane.id, { name })} />
           <VectorEditor label="Point" value={plane.point} unit={lengthUnit} onChange={(point) => setPlane(plane.id, { point })} />
           <VectorEditor label="Allowed-side normal" value={plane.normal} onChange={(normal) => setPlane(plane.id, { normal })} />
-          <Note>The normal is normalized by the solver. A sphere may approach from the normal side; penetration through the plane produces a restoring force.</Note>
+          <NumberField label="Display size" value={plane.size} onChange={(size) => setPlane(plane.id, { size: Math.max(0.01, size) })} min={0.1} max={20} step={0.1} unit={lengthUnit} />
+          <Note>The size controls only the square drawn in the scene; analytical contact extends infinitely. The normal is normalized by the solver and points toward the allowed side.</Note>
         </Section>
         <MaterialEditor material={plane.material} onChange={(patch) => setMaterial('plane', plane.id, patch)} />
       </>}

@@ -417,6 +417,7 @@ export function repairModel(value: unknown): ModelPersisted | null {
       name: str(raw.name, `Plane ${Object.keys(contactPlanes).length + 1}`),
       point: vec3(raw.point),
       normal,
+      size: Math.max(0.01, num(raw.size, 4)),
       material: {
         stiffness: Math.max(0, num(material.stiffness, 1000)),
         damping: Math.max(0, num(material.damping, 10)),

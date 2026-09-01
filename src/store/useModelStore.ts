@@ -756,6 +756,7 @@ export const useModelStore = create<ModelState>()(
             name: uniqueName(Object.values(state.contactPlanes), `Plane ${state.contactPlaneOrder.length + 1}`),
             point: [0, 0, -2],
             normal: [0, 0, 1],
+            size: 4,
             material: { stiffness: 10000, damping: 100 },
             enabled: true,
           };

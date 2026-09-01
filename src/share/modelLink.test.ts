@@ -57,6 +57,7 @@ describe('share links', () => {
     original.contactSphereOrder.push('ball');
     original.contactPlanes.floor = {
       id: 'floor', name: 'Floor', point: [0, 0, -2], normal: [0, 0, 1],
+      size: 7.5,
       material: { stiffness: 3000, damping: 40 }, enabled: true,
     };
     original.contactPlaneOrder.push('floor');
@@ -70,6 +71,7 @@ describe('share links', () => {
     expect(sphere.material).toEqual({ stiffness: 2500, damping: 35 });
     expect(plane.point).toEqual([0, 0, -2]);
     expect(plane.normal).toEqual([0, 0, 1]);
+    expect(plane.size).toBe(7.5);
     expect(plane.material).toEqual({ stiffness: 3000, damping: 40 });
   });
 
