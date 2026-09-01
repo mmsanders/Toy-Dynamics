@@ -6,9 +6,9 @@ Phase 1's headless, frictionless solver core is now implemented. Solver specific
 define body-fixed spheres and any number of one-sided fixed world planes; sphere-plane and
 sphere-sphere pairs generate compliant normal forces, multiple contacts accumulate, and the
 active set is frozen across Runge-Kutta stages. Canonical model storage, repair, share-link
-persistence, model adaptation, and worker-runner transport are also wired. The editor,
-visualization, diagnostics, and friction remain Phase 2/3 work, so contact is not yet exposed
-in the application UI.
+persistence, model adaptation, and worker-runner transport are also wired. Sphere and plane
+editing and scene visualization are now available in the application UI. Contact-specific
+diagnostics and friction remain Phase 2/3 work.
 
 ## Decision
 

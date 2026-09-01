@@ -3,6 +3,7 @@ import { BottomSheet } from './BottomSheet';
 import { BodiesPanel } from './BodiesPanel';
 import { HingesPanel } from './HingesPanel';
 import { ActuatorsPanel } from './ActuatorsPanel';
+import { ContactPanel } from './ContactPanel';
 import { RunPanel } from './RunPanel';
 import { SetupPanel } from './SetupPanel';
 import { DESKTOP_QUERY, useMediaQuery } from './useMediaQuery';
@@ -12,6 +13,7 @@ const TABS = [
   { id: 'bodies', label: 'Bodies' },
   { id: 'hinges', label: 'Hinges' },
   { id: 'actuators', label: 'Actuators' },
+  { id: 'contact', label: 'Contact' },
   { id: 'run', label: 'Run' },
   { id: 'setup', label: 'Setup' },
 ] as const;
@@ -63,6 +65,7 @@ export function Panel(props: Props) {
       {tab === 'bodies' && <BodiesPanel />}
       {tab === 'hinges' && <HingesPanel />}
       {tab === 'actuators' && <ActuatorsPanel />}
+      {tab === 'contact' && <ContactPanel />}
       {tab === 'run' && <RunPanel {...props} />}
       {tab === 'setup' && <SetupPanel />}
     </div>
