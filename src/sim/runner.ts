@@ -1,4 +1,4 @@
-import type { Actuator, Body, Hinge, SimSettings } from '../types';
+import type { Actuator, Body, ContactPlane, ContactSphere, Hinge, SimSettings } from '../types';
 import { buildSpec } from '../model/adapter';
 import { buildModel, type MultibodyModel } from '../dyn/model';
 import { makeDynamics, totalEnergy, type Dynamics } from '../dyn/forward';
@@ -28,6 +28,8 @@ export type RunInput = {
   bodies: Record<string, Body>;
   hinges: Record<string, Hinge>;
   actuators: Record<string, Actuator>;
+  contactSpheres: Record<string, ContactSphere>;
+  contactPlanes: Record<string, ContactPlane>;
   settings: SimSettings;
 };
 
@@ -71,6 +73,11 @@ export type Run = {
 
 /** Whether anything in the model can change the total energy. */
 function isPassive(input: RunInput): boolean {
+  // Contact spring energy is not yet included in trajectory energy, so even undamped
+  // contact must suppress the conservation diagnostic rather than report false drift.
+  if (Object.values(input.contactSpheres).some((sphere) => sphere.enabled)
+      && Object.values(input.contactPlanes).some((plane) => plane.enabled)) return false;
+  if (Object.values(input.contactSpheres).filter((sphere) => sphere.enabled).length > 1) return false;
   for (const actuator of Object.values(input.actuators)) {
     if (actuator.enabled) return false;
   }
@@ -85,7 +92,7 @@ function isPassive(input: RunInput): boolean {
 }
 
 export function createRun(input: RunInput): Run | { error: string } {
-  const built = buildSpec(input.bodies, input.hinges, input.actuators, input.settings);
+  const built = buildSpec(input.bodies, input.hinges, input.actuators, input.settings, input.contactSpheres, input.contactPlanes);
   if (!built.ok) {
     return { error: built.problems[0]?.message ?? 'The model could not be assembled.' };
   }

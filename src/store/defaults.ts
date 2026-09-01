@@ -3,6 +3,8 @@ import {
   type Actuator,
   type Body,
   type Conventions,
+  type ContactPlane,
+  type ContactSphere,
   type DofSpec,
   type Hinge,
   type Node,
@@ -93,6 +95,10 @@ export type ModelSlice = {
   hingeOrder: string[];
   actuators: Record<string, Actuator>;
   actuatorOrder: string[];
+  contactSpheres: Record<string, ContactSphere>;
+  contactSphereOrder: string[];
+  contactPlanes: Record<string, ContactPlane>;
+  contactPlaneOrder: string[];
   settings: SimSettings;
   conventions: Conventions;
   selectedBodyId: string;
@@ -192,6 +198,10 @@ export function initialModel(): ModelSlice {
     hingeOrder: [shoulder.id, elbow.id],
     actuators: { [drive.id]: drive },
     actuatorOrder: [drive.id],
+    contactSpheres: {},
+    contactSphereOrder: [],
+    contactPlanes: {},
+    contactPlaneOrder: [],
     settings: { ...DEFAULT_SETTINGS },
     conventions: { ...DEFAULT_CONVENTIONS },
     selectedBodyId: upper.id,
