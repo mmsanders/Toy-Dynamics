@@ -133,6 +133,8 @@ export type ContactMaterialSpec = {
   stiffness: number;
   /** Damping in force per unit closing speed. */
   damping: number;
+  friction?: number;
+  frictionVelocity?: number;
 };
 
 /** A sphere fixed to a body. `point` is its centre in body coordinates. */
@@ -189,6 +191,8 @@ export type CompiledContactSphere = {
   radius: number;
   stiffness: number;
   damping: number;
+  friction: number;
+  frictionVelocity: number;
 };
 
 export type CompiledContactPlane = {
@@ -198,6 +202,8 @@ export type CompiledContactPlane = {
   normal: V3;
   stiffness: number;
   damping: number;
+  friction: number;
+  frictionVelocity: number;
 };
 
 /**
@@ -434,6 +440,8 @@ function compileContactSpheres(
       radius: Math.max(0, sphere.radius),
       stiffness: Math.max(0, sphere.material.stiffness),
       damping: Math.max(0, sphere.material.damping),
+      friction: Math.max(0, sphere.material.friction ?? 0),
+      frictionVelocity: Math.max(Number.EPSILON, sphere.material.frictionVelocity ?? 0.01),
     });
   }
   return out;
@@ -453,6 +461,8 @@ function compileContactPlanes(spec: ModelSpec): CompiledContactPlane[] {
       normal: v3(nx / length, ny / length, nz / length),
       stiffness: Math.max(0, plane.material.stiffness),
       damping: Math.max(0, plane.material.damping),
+      friction: Math.max(0, plane.material.friction ?? 0),
+      frictionVelocity: Math.max(Number.EPSILON, plane.material.frictionVelocity ?? 0.01),
     });
   }
   return out;

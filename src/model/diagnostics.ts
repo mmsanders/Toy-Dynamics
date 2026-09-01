@@ -106,12 +106,12 @@ export function runDiagnostics(
         detail: 'The solver treats it as zero. Use zero explicitly for a point contact, or enter a positive sphere radius.',
       });
     }
-    if (sphere.material.stiffness < 0 || sphere.material.damping < 0) {
+    if (sphere.material.stiffness < 0 || sphere.material.damping < 0 || sphere.material.friction < 0 || sphere.material.frictionVelocity <= 0) {
       out.push({
         id: `contact-material:sphere:${sphere.id}`,
         severity: 'warning',
         title: `${sphere.name} has a negative contact property`,
-        detail: 'Negative stiffness and damping are not physical and are clamped to zero by the solver.',
+        detail: 'Stiffness, damping, and friction must be non-negative; friction velocity must be positive. The solver clamps invalid values.',
       });
     }
   }
@@ -124,12 +124,12 @@ export function runDiagnostics(
         detail: 'A plane needs a non-zero allowed-side normal. This plane is ignored by the solver.',
       });
     }
-    if (plane.material.stiffness < 0 || plane.material.damping < 0) {
+    if (plane.material.stiffness < 0 || plane.material.damping < 0 || plane.material.friction < 0 || plane.material.frictionVelocity <= 0) {
       out.push({
         id: `contact-material:plane:${plane.id}`,
         severity: 'warning',
         title: `${plane.name} has a negative contact property`,
-        detail: 'Negative stiffness and damping are not physical and are clamped to zero by the solver.',
+        detail: 'Stiffness, damping, and friction must be non-negative; friction velocity must be positive. The solver clamps invalid values.',
       });
     }
   }

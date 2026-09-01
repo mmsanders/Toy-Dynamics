@@ -8,7 +8,7 @@ import { EmptyState, IconButton, ListRow, Note, Picker, Section, TextField } fro
 
 type Selection = { kind: 'sphere' | 'plane'; id: string } | null;
 
-/** Authoring controls for the analytical, frictionless contact primitives. */
+/** Authoring controls for the analytical compliant contact primitives. */
 export function ContactPanel() {
   const bodies = useModelStore((s) => s.bodies);
   const spheres = useModelStore((s) => s.contactSpheres);
@@ -83,6 +83,8 @@ function MaterialEditor({ material, onChange }: { material: ContactMaterial; onC
   return <Section title="Compliant material">
     <NumberField label="Stiffness" value={material.stiffness} onChange={(stiffness) => onChange({ stiffness })} min={0} max={1e7} step={100} />
     <NumberField label="Damping" value={material.damping} onChange={(damping) => onChange({ damping })} min={0} max={1e5} step={10} />
-    <Note>Pair stiffness and damping use the softer of the two materials. High stiffness may require a smaller timestep.</Note>
+    <NumberField label="Sliding friction" value={material.friction} onChange={(friction) => onChange({ friction })} min={0} max={10} step={0.05} />
+    <NumberField label="Friction velocity" value={material.frictionVelocity} onChange={(frictionVelocity) => onChange({ frictionVelocity })} min={0.000001} max={100} step={0.001} />
+    <Note>Pair properties use the lower value. Friction is regularized kinetic friction, not static sticking; the velocity scale controls smoothing near zero slip.</Note>
   </Section>;
 }

@@ -54,6 +54,25 @@ describe('analytical compliant contact', () => {
     expect(acceleration(spec)[0]).toBeCloseTo(1, 12);
   });
 
+  it('opposes tangential slip with bounded regularized friction', () => {
+    const frictionMaterial: ContactMaterialSpec = {
+      stiffness: 100, damping: 0, friction: 0.5, frictionVelocity: 0.01,
+    };
+    const spec: ModelSpec = {
+      bodies: [bodySpec()],
+      hinges: [hingeSpec({
+        free: [...MASK.planar], values: [-0.1, 0, 0, 0, 0, 0], rates: [0, 2, 0, 0, 0, 0],
+      })],
+      contactSpheres: [{ name: 'Slider', body: 0, point: [0, 0, 0], radius: 0, material: frictionMaterial }],
+      contactPlanes: [{ name: 'Wall', point: [0, 0, 0], normal: [1, 0, 0], material: frictionMaterial }],
+      gravity: [0, 0, 0],
+    };
+
+    const qdd = acceleration(spec);
+    expect(qdd[0]).toBeCloseTo(10, 12);
+    expect(qdd[1]).toBeCloseTo(-5, 12);
+  });
+
   it('accumulates forces from multiple planes', () => {
     const spec: ModelSpec = {
       bodies: [bodySpec()],

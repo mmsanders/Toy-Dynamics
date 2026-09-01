@@ -715,7 +715,7 @@ export const useModelStore = create<ModelState>()(
             bodyId: target,
             nodeId: body.nodeOrder[body.nodeOrder.length - 1] ?? body.originNodeId,
             radius: 0.1,
-            material: { stiffness: 10000, damping: 100 },
+            material: { stiffness: 10000, damping: 100, friction: 0, frictionVelocity: 0.01 },
             enabled: true,
           };
           return {
@@ -757,7 +757,7 @@ export const useModelStore = create<ModelState>()(
             point: [0, 0, -2],
             normal: [0, 0, 1],
             size: 4,
-            material: { stiffness: 10000, damping: 100 },
+            material: { stiffness: 10000, damping: 100, friction: 0, frictionVelocity: 0.01 },
             enabled: true,
           };
           return {
