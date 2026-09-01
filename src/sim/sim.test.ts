@@ -11,6 +11,8 @@ const baseInput = (): RunInput => {
     bodies: model.bodies,
     hinges: model.hinges,
     actuators: model.actuators,
+    contactSpheres: model.contactSpheres,
+    contactPlanes: model.contactPlanes,
     settings: model.settings,
   };
 };
@@ -32,6 +34,48 @@ const asTrajectory = (run: Run): Trajectory => ({
 });
 
 describe('trajectory runner', () => {
+  it('carries canonical contact geometry through the runner', () => {
+    const input = baseInput();
+    input.actuators = {};
+    input.settings = { ...input.settings, gravity: [0, 0, 0], duration: 0.02, dt: 0.0001 };
+    input.hinges = structuredClone(input.hinges);
+    const shoulder = input.hinges.shoulder!;
+    shoulder.dof.forEach((dof, axis) => { dof.free = axis === 0; dof.q0 = 0; dof.u0 = 0; });
+    input.contactSpheres = {
+      foot: { id: 'foot', name: 'Foot', bodyId: 'upper', nodeId: 'upper-root', radius: 0,
+        material: { stiffness: 1000, damping: 20 }, enabled: true },
+    };
+    input.contactPlanes = {
+      wall: { id: 'wall', name: 'Wall', point: [0.1, 0, 0], normal: [1, 0, 0],
+        material: { stiffness: 1000, damping: 20 }, enabled: true },
+    };
+
+    const run = complete(input);
+    const last = (run.progress.written - 1) * run.meta.stride + 1;
+    expect(run.data[last]).toBeGreaterThan(0);
+    expect(run.meta.passive).toBe(false);
+  });
+  it('treats undamped compliant contact as energy-conserving', () => {
+    const input = baseInput();
+    input.actuators = {};
+    input.hinges = structuredClone(input.hinges);
+    for (const hinge of Object.values(input.hinges)) {
+      for (const dof of hinge.dof) {
+        dof.damping = 0;
+        dof.friction = 0;
+        dof.stiction = 0;
+      }
+    }
+    input.contactSpheres = {
+      point: { id: 'point', name: 'Point', bodyId: 'upper', nodeId: 'upper-root', radius: 0,
+        material: { stiffness: 1000, damping: 0 }, enabled: true },
+    };
+    input.contactPlanes = {
+      wall: { id: 'wall', name: 'Wall', point: [-10, 0, 0], normal: [1, 0, 0],
+        material: { stiffness: 1000, damping: 0 }, enabled: true },
+    };
+    expect(complete(input).meta.passive).toBe(true);
+  });
   it('fills every frame of the requested duration', () => {
     const input = baseInput();
     input.settings = { ...input.settings, duration: 2, sampleRate: 60 };
