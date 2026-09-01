@@ -43,12 +43,12 @@ describe('trajectory runner', () => {
     shoulder.dof.forEach((dof, axis) => { dof.free = axis === 0; dof.q0 = 0; dof.u0 = 0; });
     input.contactSpheres = {
       foot: { id: 'foot', name: 'Foot', bodyId: 'upper', nodeId: 'upper-root', radius: 0,
-        material: { stiffness: 1000, damping: 20 }, enabled: true },
+        material: { stiffness: 1000, damping: 20, friction: 0, frictionVelocity: 0.01 }, enabled: true },
     };
     input.contactPlanes = {
       wall: { id: 'wall', name: 'Wall', point: [0.1, 0, 0], normal: [1, 0, 0],
         size: 4,
-        material: { stiffness: 1000, damping: 20 }, enabled: true },
+        material: { stiffness: 1000, damping: 20, friction: 0, frictionVelocity: 0.01 }, enabled: true },
     };
 
     const run = complete(input);
@@ -69,12 +69,12 @@ describe('trajectory runner', () => {
     }
     input.contactSpheres = {
       point: { id: 'point', name: 'Point', bodyId: 'upper', nodeId: 'upper-root', radius: 0,
-        material: { stiffness: 1000, damping: 0 }, enabled: true },
+        material: { stiffness: 1000, damping: 0, friction: 0, frictionVelocity: 0.01 }, enabled: true },
     };
     input.contactPlanes = {
       wall: { id: 'wall', name: 'Wall', point: [-10, 0, 0], normal: [1, 0, 0],
         size: 4,
-        material: { stiffness: 1000, damping: 0 }, enabled: true },
+        material: { stiffness: 1000, damping: 0, friction: 0, frictionVelocity: 0.01 }, enabled: true },
     };
     expect(complete(input).meta.passive).toBe(true);
   });

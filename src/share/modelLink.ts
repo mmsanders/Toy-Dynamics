@@ -72,10 +72,10 @@ type EncodedModel = {
   b: EncodedBody[];
   h: EncodedHinge[];
   a: EncodedActuator[];
-  /** `[name, body, node, radius, stiffness, damping, enabled]`. */
-  cs?: [string, number, number, number, number, number, 0 | 1][];
-  /** `[name, point, normal, stiffness, damping, enabled, displaySize?]`. */
-  cp?: [string, number[], number[], number, number, 0 | 1, number?][];
+  /** `[name, body, node, radius, stiffness, damping, enabled, friction?, frictionVelocity?]`. */
+  cs?: [string, number, number, number, number, number, 0 | 1, number?, number?][];
+  /** `[name, point, normal, stiffness, damping, enabled, displaySize?, friction?, frictionVelocity?]`. */
+  cp?: [string, number[], number[], number, number, 0 | 1, number?, number?, number?][];
   /** `[units, gx, gy, gz, dt, duration, integrator, sampleRate]`. */
   s: [string, number, number, number, number, number, string, number];
   /** `[upAxis, eulerOrder, rotationMode, angleUnit]`. */
@@ -192,14 +192,15 @@ export function encodeModel(model: ModelPersisted): string {
       if (!sphere) return [];
       return [[sphere.name, bodyIndex.get(sphere.bodyId) ?? 0,
         nodeIndex.get(sphere.bodyId)?.get(sphere.nodeId) ?? 0, round(sphere.radius),
-        round(sphere.material.stiffness), round(sphere.material.damping), sphere.enabled ? 1 : 0]];
+        round(sphere.material.stiffness), round(sphere.material.damping), sphere.enabled ? 1 : 0,
+        round(sphere.material.friction), round(sphere.material.frictionVelocity)]];
     }),
     cp: model.contactPlaneOrder.flatMap((id) => {
       const plane = model.contactPlanes[id];
       if (!plane) return [];
       return [[plane.name, roundAll(plane.point), roundAll(plane.normal),
         round(plane.material.stiffness), round(plane.material.damping), plane.enabled ? 1 : 0,
-        round(plane.size)]];
+        round(plane.size), round(plane.material.friction), round(plane.material.frictionVelocity)]];
     }),
     s: [
       model.settings.units,
@@ -379,7 +380,7 @@ export function decodeModel(encoded: string): ModelPersisted | null {
     contactSpheres[id] = {
       name: sphere?.[0], bodyId: bodyIds[Number(sphere?.[1])],
       nodeId: nodeIds[Number(sphere?.[1])]?.[Number(sphere?.[2])], radius: sphere?.[3],
-      material: { stiffness: sphere?.[4], damping: sphere?.[5] }, enabled: sphere?.[6] !== 0,
+      material: { stiffness: sphere?.[4], damping: sphere?.[5], friction: sphere?.[7], frictionVelocity: sphere?.[8] }, enabled: sphere?.[6] !== 0,
     };
   });
   const contactPlanes: Record<string, unknown> = {};
@@ -389,7 +390,7 @@ export function decodeModel(encoded: string): ModelPersisted | null {
     contactPlaneOrder.push(id);
     contactPlanes[id] = {
       name: plane?.[0], point: plane?.[1], normal: plane?.[2],
-      material: { stiffness: plane?.[3], damping: plane?.[4] }, enabled: plane?.[5] !== 0,
+      material: { stiffness: plane?.[3], damping: plane?.[4], friction: plane?.[7], frictionVelocity: plane?.[8] }, enabled: plane?.[5] !== 0,
       size: plane?.[6],
     };
   });

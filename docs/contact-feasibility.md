@@ -9,7 +9,11 @@ active set is frozen across Runge-Kutta stages. Canonical model storage, repair,
 persistence, model adaptation, and worker-runner transport are also wired. Sphere and plane
 editing and scene visualization are now available in the application UI. Diagnostics cover
 invalid geometry and material values, initial overlap, and contact stiffness versus timestep.
-Friction remains Phase 3 work.
+Phases 1–3 are now complete for the main analytical-contact milestone. Regularized kinetic
+friction has authorable Coulomb coefficients and velocity scales, pairwise material
+combination, persistence, diagnostics, passive-run classification, and integrated dissipation
+coverage. Diagnostics also flag likely discrete-contact tunnelling from initial sphere speed.
+Static sticking and Phase 4 heightfields remain intentionally out of scope.
 
 ## Decision
 
