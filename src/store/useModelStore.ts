@@ -7,6 +7,9 @@ import {
   type ActuatorKind,
   type Body,
   type Conventions,
+  type ContactMaterial,
+  type ContactPlane,
+  type ContactSphere,
   type DofSpec,
   type Hinge,
   type Inertia,
@@ -94,6 +97,14 @@ export type ModelState = ModelSlice & {
   setActuatorVector: (id: string, vector: Vec3) => void;
   setActuatorProfile: (id: string, profile: Profile) => void;
   toggleActuator: (id: string) => void;
+
+  addContactSphere: (bodyId?: string) => string | null;
+  removeContactSphere: (id: string) => void;
+  setContactSphere: (id: string, patch: Partial<ContactSphere>) => void;
+  addContactPlane: () => string;
+  removeContactPlane: (id: string) => void;
+  setContactPlane: (id: string, patch: Partial<ContactPlane>) => void;
+  setContactMaterial: (kind: 'sphere' | 'plane', id: string, patch: Partial<ContactMaterial>) => void;
 
   setSettings: (patch: Partial<SimSettings>) => void;
   setUnits: (units: UnitSystem) => void;
@@ -183,6 +194,10 @@ export function modelSnapshot(state: ModelState): ModelPersisted {
     hingeOrder: state.hingeOrder,
     actuators: state.actuators,
     actuatorOrder: state.actuatorOrder,
+    contactSpheres: state.contactSpheres,
+    contactSphereOrder: state.contactSphereOrder,
+    contactPlanes: state.contactPlanes,
+    contactPlaneOrder: state.contactPlaneOrder,
     settings: state.settings,
     conventions: state.conventions,
     selectedBodyId: state.selectedBodyId,
@@ -303,6 +318,11 @@ export const useModelStore = create<ModelState>()(
             if (actuator.bodyId === id) delete actuators[actuator.id];
           }
           const actuatorOrder = state.actuatorOrder.filter((a) => actuators[a]);
+          const contactSpheres = { ...state.contactSpheres };
+          for (const sphere of Object.values(contactSpheres)) {
+            if (sphere.bodyId === id) delete contactSpheres[sphere.id];
+          }
+          const contactSphereOrder = state.contactSphereOrder.filter((sphere) => contactSpheres[sphere]);
 
           const bodyOrder = state.bodyOrder.filter((b) => b !== id);
           const hingeOrder = state.hingeOrder.filter((h) => hinges[h]);
@@ -315,6 +335,8 @@ export const useModelStore = create<ModelState>()(
             hingeOrder,
             actuators,
             actuatorOrder,
+            contactSpheres,
+            contactSphereOrder,
             selectedBodyId: state.selectedBodyId === id ? fallbackBody : state.selectedBodyId,
             selectedHingeId:
               state.selectedHingeId && hinges[state.selectedHingeId]
@@ -412,7 +434,8 @@ export const useModelStore = create<ModelState>()(
               (h) =>
                 (h.parentBodyId === bodyId && h.parentNodeId === nodeId) ||
                 (h.childBodyId === bodyId && h.childNodeId === nodeId),
-            ) || Object.values(state.actuators).some((a) => a.bodyId === bodyId && a.nodeId === nodeId);
+            ) || Object.values(state.actuators).some((a) => a.bodyId === bodyId && a.nodeId === nodeId)
+              || Object.values(state.contactSpheres).some((sphere) => sphere.bodyId === bodyId && sphere.nodeId === nodeId);
           if (inUse) return state;
 
           const nodes = { ...body.nodes };
@@ -671,6 +694,104 @@ export const useModelStore = create<ModelState>()(
           const actuator = state.actuators[id];
           return actuator
             ? { actuators: { ...state.actuators, [id]: { ...actuator, enabled: !actuator.enabled } } }
+            : state;
+        }),
+
+      // --- contact geometry -----------------------------------------------------------
+
+      addContactSphere: (bodyId) => {
+        const state = get();
+        const target =
+          bodyId && state.bodies[bodyId] && !state.bodies[bodyId]!.isGround
+            ? bodyId
+            : state.bodyOrder.find((id) => !state.bodies[id]?.isGround);
+        if (!target) return null;
+        const id = nextId('contact-sphere');
+        set((current) => {
+          const body = current.bodies[target]!;
+          const sphere: ContactSphere = {
+            id,
+            name: uniqueName(Object.values(current.contactSpheres), `Sphere ${current.contactSphereOrder.length + 1}`),
+            bodyId: target,
+            nodeId: body.nodeOrder[body.nodeOrder.length - 1] ?? body.originNodeId,
+            radius: 0.1,
+            material: { stiffness: 10000, damping: 100 },
+            enabled: true,
+          };
+          return {
+            contactSpheres: { ...current.contactSpheres, [id]: sphere },
+            contactSphereOrder: [...current.contactSphereOrder, id],
+          };
+        });
+        return id;
+      },
+
+      removeContactSphere: (id) =>
+        set((state) => {
+          if (!state.contactSpheres[id]) return state;
+          const contactSpheres = { ...state.contactSpheres };
+          delete contactSpheres[id];
+          return { contactSpheres, contactSphereOrder: state.contactSphereOrder.filter((entry) => entry !== id) };
+        }),
+
+      setContactSphere: (id, patch) =>
+        set((state) => {
+          const sphere = state.contactSpheres[id];
+          if (!sphere) return state;
+          let next = { ...sphere, ...patch };
+          if (patch.bodyId) {
+            const body = state.bodies[patch.bodyId];
+            if (!body || body.isGround) return state;
+            if (!body.nodes[next.nodeId]) next = { ...next, nodeId: body.originNodeId };
+          }
+          if (!state.bodies[next.bodyId]?.nodes[next.nodeId]) return state;
+          return { contactSpheres: { ...state.contactSpheres, [id]: next } };
+        }),
+
+      addContactPlane: () => {
+        const id = nextId('contact-plane');
+        set((state) => {
+          const plane: ContactPlane = {
+            id,
+            name: uniqueName(Object.values(state.contactPlanes), `Plane ${state.contactPlaneOrder.length + 1}`),
+            point: [0, 0, -2],
+            normal: [0, 0, 1],
+            material: { stiffness: 10000, damping: 100 },
+            enabled: true,
+          };
+          return {
+            contactPlanes: { ...state.contactPlanes, [id]: plane },
+            contactPlaneOrder: [...state.contactPlaneOrder, id],
+          };
+        });
+        return id;
+      },
+
+      removeContactPlane: (id) =>
+        set((state) => {
+          if (!state.contactPlanes[id]) return state;
+          const contactPlanes = { ...state.contactPlanes };
+          delete contactPlanes[id];
+          return { contactPlanes, contactPlaneOrder: state.contactPlaneOrder.filter((entry) => entry !== id) };
+        }),
+
+      setContactPlane: (id, patch) =>
+        set((state) => {
+          const plane = state.contactPlanes[id];
+          return plane ? { contactPlanes: { ...state.contactPlanes, [id]: { ...plane, ...patch } } } : state;
+        }),
+
+      setContactMaterial: (kind, id, patch) =>
+        set((state) => {
+          if (kind === 'sphere') {
+            const sphere = state.contactSpheres[id];
+            return sphere
+              ? { contactSpheres: { ...state.contactSpheres, [id]: { ...sphere, material: { ...sphere.material, ...patch } } } }
+              : state;
+          }
+          const plane = state.contactPlanes[id];
+          return plane
+            ? { contactPlanes: { ...state.contactPlanes, [id]: { ...plane, material: { ...plane.material, ...patch } } } }
             : state;
         }),
 
