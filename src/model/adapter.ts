@@ -1,4 +1,4 @@
-import { GROUND_ID, type Actuator, type Body, type Hinge, type Profile, type SimSettings } from '../types';
+import { GROUND_ID, type Actuator, type Body, type ContactPlane, type ContactSphere, type Hinge, type Profile, type SimSettings } from '../types';
 import type { ActuatorSpec, BodySpec, DofParams, HingeSpec, ModelSpec } from '../dyn/model';
 import { compileExpr } from '../dyn/expr';
 import { orderHingeIds } from './topology';
@@ -98,6 +98,8 @@ export function buildSpec(
   hinges: Record<string, Hinge>,
   actuators: Record<string, Actuator>,
   settings: SimSettings,
+  contactSpheres: Record<string, ContactSphere> = {},
+  contactPlanes: Record<string, ContactPlane> = {},
 ): BuildResult {
   const problems: BuildProblem[] = [];
 
@@ -229,12 +231,39 @@ export function buildSpec(
     });
   }
 
+  const sphereSpecs = Object.values(contactSpheres).flatMap((sphere) => {
+    if (!sphere.enabled) return [];
+    const body = bodies[sphere.bodyId];
+    const index = bodyIndex.get(sphere.bodyId);
+    if (!body || index === undefined) return [];
+    const node = body.nodes[sphere.nodeId] ?? body.nodes[body.originNodeId];
+    if (!node) return [];
+    return [{
+      name: sphere.name,
+      body: index,
+      point: [...node.position],
+      radius: sphere.radius,
+      material: { ...sphere.material },
+    }];
+  });
+
+  const planeSpecs = Object.values(contactPlanes)
+    .filter((plane) => plane.enabled)
+    .map((plane) => ({
+      name: plane.name,
+      point: [...plane.point],
+      normal: [...plane.normal],
+      material: { ...plane.material },
+    }));
+
   return {
     ok: true,
     spec: {
       bodies: bodySpecs,
       hinges: hingeSpecs,
       actuators: actuatorSpecs,
+      contactSpheres: sphereSpecs,
+      contactPlanes: planeSpecs,
       gravity: settings.gravity,
     },
     bodyIndex,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { forwardDynamics, makeDynamics } from './forward';
+import { forwardDynamics, makeDynamics, totalEnergy } from './forward';
 import { bodySpec, hingeSpec, MASK } from './fixtures';
 import { buildModel, type ContactMaterialSpec, type ModelSpec } from './model';
 
@@ -14,6 +14,21 @@ function acceleration(spec: ModelSpec, settleDt = 1e-3): Float64Array {
 }
 
 describe('analytical compliant contact', () => {
+  it('includes compliant spring energy in total mechanical energy', () => {
+    const spec: ModelSpec = {
+      bodies: [bodySpec()],
+      hinges: [hingeSpec({ free: [...MASK.slideX], values: [-0.1, 0, 0, 0, 0, 0] })],
+      contactSpheres: [{ name: 'Point', body: 0, point: [0, 0, 0], radius: 0, material }],
+      contactPlanes: [{ name: 'Wall', point: [0, 0, 0], normal: [1, 0, 0], material }],
+      gravity: [0, 0, 0],
+    };
+    const model = buildModel(spec);
+    const dynamics = makeDynamics(model);
+    const energy = totalEnergy(dynamics, model.q0, model.v0);
+    expect(energy.kinetic).toBe(0);
+    expect(energy.potential).toBeCloseTo(0.5, 12);
+    expect(energy.total).toBeCloseTo(0.5, 12);
+  });
   it('applies the sphere-plane penalty force and closing-speed damping', () => {
     const spec: ModelSpec = {
       bodies: [bodySpec({ mass: 2 })],

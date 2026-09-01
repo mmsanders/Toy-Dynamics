@@ -290,6 +290,38 @@ function applyContacts(d: Dynamics, settle: boolean): void {
   if (refresh) d.contactSetInitialized = true;
 }
 
+/** Elastic energy stored by the compliant normal springs at the current configuration. */
+function contactPotentialEnergy(d: Dynamics): number {
+  const { contactSpheres: spheres, contactPlanes: planes } = d.model;
+  if (spheres.length === 0) return 0;
+  updateContactPoints(d);
+  let energy = 0;
+
+  for (let i = 0; i < spheres.length; i++) {
+    const sphere = spheres[i]!;
+    const position = d.spherePosition[i]!;
+    for (const plane of planes) {
+      const distance = plane.normal[0]! * (position[0]! - plane.point[0]!)
+        + plane.normal[1]! * (position[1]! - plane.point[1]!)
+        + plane.normal[2]! * (position[2]! - plane.point[2]!);
+      const penetration = Math.max(0, sphere.radius - distance);
+      energy += 0.5 * Math.min(sphere.stiffness, plane.stiffness) * penetration * penetration;
+    }
+  }
+
+  for (let i = 0; i < spheres.length; i++) {
+    for (let j = i + 1; j < spheres.length; j++) {
+      const a = spheres[i]!, b = spheres[j]!;
+      if (a.link === b.link) continue;
+      const pa = d.spherePosition[i]!, pb = d.spherePosition[j]!;
+      const distance = Math.hypot(pb[0]! - pa[0]!, pb[1]! - pa[1]!, pb[2]! - pa[2]!);
+      const penetration = Math.max(0, a.radius + b.radius - distance);
+      energy += 0.5 * Math.min(a.stiffness, b.stiffness) * penetration * penetration;
+    }
+  }
+  return energy;
+}
+
 /**
  * Joint-local generalized forces: springs, dampers, Coulomb friction and travel stops.
  *
@@ -535,6 +567,8 @@ export function totalEnergy(d: Dynamics, q: Float64Array, v: Float64Array): { ki
     const wz = e[2]! * cx + e[5]! * cy + e[8]! * cz + link.Xworld.r[2]!;
     potential -= link.I.m * (g[0]! * wx + g[1]! * wy + g[2]! * wz);
   }
+
+  potential += contactPotentialEnergy(d);
 
   return { kinetic, potential, total: kinetic + potential };
 }

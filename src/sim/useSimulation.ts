@@ -46,6 +46,8 @@ function runInput(state: ReturnType<typeof useModelStore.getState>) {
     bodies: state.bodies,
     hinges: state.hinges,
     actuators: state.actuators,
+    contactSpheres: state.contactSpheres,
+    contactPlanes: state.contactPlanes,
     settings: state.settings,
   };
 }
@@ -54,6 +56,8 @@ export function useSimulation(): SimulationState {
   const bodies = useModelStore((s) => s.bodies);
   const hinges = useModelStore((s) => s.hinges);
   const actuators = useModelStore((s) => s.actuators);
+  const contactSpheres = useModelStore((s) => s.contactSpheres);
+  const contactPlanes = useModelStore((s) => s.contactPlanes);
   const settings = useModelStore((s) => s.settings);
 
   const [state, setState] = useState<SimulationState>({
@@ -147,7 +151,7 @@ export function useSimulation(): SimulationState {
     return () => {
       if (pendingRef.current) clearTimeout(pendingRef.current);
     };
-  }, [bodies, hinges, actuators, settings]);
+  }, [bodies, hinges, actuators, contactSpheres, contactPlanes, settings]);
 
   return state;
 }

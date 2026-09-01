@@ -22,6 +22,10 @@ const snapshot = (): ModelPersisted => {
     hingeOrder: model.hingeOrder,
     actuators: model.actuators,
     actuatorOrder: model.actuatorOrder,
+    contactSpheres: model.contactSpheres,
+    contactSphereOrder: model.contactSphereOrder,
+    contactPlanes: model.contactPlanes,
+    contactPlaneOrder: model.contactPlaneOrder,
     settings: model.settings,
     conventions: model.conventions,
     selectedBodyId: model.selectedBodyId,
@@ -42,6 +46,31 @@ describe('share links', () => {
 
     const names = (m: ModelPersisted) => m.bodyOrder.map((id) => m.bodies[id]!.name);
     expect(names(decoded)).toEqual(names(original));
+  });
+
+  it('round-trips contact geometry and materials', () => {
+    const original = snapshot();
+    original.contactSpheres.ball = {
+      id: 'ball', name: 'Foot', bodyId: 'lower', nodeId: 'lower-tip', radius: 0.12,
+      material: { stiffness: 2500, damping: 35 }, enabled: true,
+    };
+    original.contactSphereOrder.push('ball');
+    original.contactPlanes.floor = {
+      id: 'floor', name: 'Floor', point: [0, 0, -2], normal: [0, 0, 1],
+      material: { stiffness: 3000, damping: 40 }, enabled: true,
+    };
+    original.contactPlaneOrder.push('floor');
+
+    const decoded = decodeModel(encodeModel(original))!;
+    const sphere = decoded.contactSpheres[decoded.contactSphereOrder[0]!]!;
+    const plane = decoded.contactPlanes[decoded.contactPlaneOrder[0]!]!;
+    expect(decoded.bodies[sphere.bodyId]!.name).toBe('Forearm');
+    expect(decoded.bodies[sphere.bodyId]!.nodes[sphere.nodeId]!.name).toBe('Tip');
+    expect(sphere.radius).toBe(0.12);
+    expect(sphere.material).toEqual({ stiffness: 2500, damping: 35 });
+    expect(plane.point).toEqual([0, 0, -2]);
+    expect(plane.normal).toEqual([0, 0, 1]);
+    expect(plane.material).toEqual({ stiffness: 3000, damping: 40 });
   });
 
   it('preserves mass properties exactly', () => {

@@ -183,6 +183,10 @@ export function modelSnapshot(state: ModelState): ModelPersisted {
     hingeOrder: state.hingeOrder,
     actuators: state.actuators,
     actuatorOrder: state.actuatorOrder,
+    contactSpheres: state.contactSpheres,
+    contactSphereOrder: state.contactSphereOrder,
+    contactPlanes: state.contactPlanes,
+    contactPlaneOrder: state.contactPlaneOrder,
     settings: state.settings,
     conventions: state.conventions,
     selectedBodyId: state.selectedBodyId,
@@ -303,6 +307,11 @@ export const useModelStore = create<ModelState>()(
             if (actuator.bodyId === id) delete actuators[actuator.id];
           }
           const actuatorOrder = state.actuatorOrder.filter((a) => actuators[a]);
+          const contactSpheres = { ...state.contactSpheres };
+          for (const sphere of Object.values(contactSpheres)) {
+            if (sphere.bodyId === id) delete contactSpheres[sphere.id];
+          }
+          const contactSphereOrder = state.contactSphereOrder.filter((sphere) => contactSpheres[sphere]);
 
           const bodyOrder = state.bodyOrder.filter((b) => b !== id);
           const hingeOrder = state.hingeOrder.filter((h) => hinges[h]);
@@ -315,6 +324,8 @@ export const useModelStore = create<ModelState>()(
             hingeOrder,
             actuators,
             actuatorOrder,
+            contactSpheres,
+            contactSphereOrder,
             selectedBodyId: state.selectedBodyId === id ? fallbackBody : state.selectedBodyId,
             selectedHingeId:
               state.selectedHingeId && hinges[state.selectedHingeId]
@@ -412,7 +423,8 @@ export const useModelStore = create<ModelState>()(
               (h) =>
                 (h.parentBodyId === bodyId && h.parentNodeId === nodeId) ||
                 (h.childBodyId === bodyId && h.childNodeId === nodeId),
-            ) || Object.values(state.actuators).some((a) => a.bodyId === bodyId && a.nodeId === nodeId);
+            ) || Object.values(state.actuators).some((a) => a.bodyId === bodyId && a.nodeId === nodeId)
+              || Object.values(state.contactSpheres).some((sphere) => sphere.bodyId === bodyId && sphere.nodeId === nodeId);
           if (inUse) return state;
 
           const nodes = { ...body.nodes };

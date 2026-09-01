@@ -3,6 +3,8 @@ import {
   type Actuator,
   type Body,
   type Conventions,
+  type ContactPlane,
+  type ContactSphere,
   type DofSpec,
   type Hinge,
   type Inertia,
@@ -45,6 +47,10 @@ export type ModelPersisted = {
   hingeOrder: string[];
   actuators: Record<string, Actuator>;
   actuatorOrder: string[];
+  contactSpheres: Record<string, ContactSphere>;
+  contactSphereOrder: string[];
+  contactPlanes: Record<string, ContactPlane>;
+  contactPlaneOrder: string[];
   settings: SimSettings;
   conventions: Conventions;
   selectedBodyId: string;
@@ -371,6 +377,58 @@ export function repairModel(value: unknown): ModelPersisted | null {
     : [];
   for (const id of Object.keys(actuators)) if (!actuatorOrder.includes(id)) actuatorOrder.push(id);
 
+  const contactSpheres: Record<string, ContactSphere> = {};
+  const rawSpheres = isObject(value.contactSpheres) ? value.contactSpheres : {};
+  for (const [id, raw] of Object.entries(rawSpheres)) {
+    if (!isObject(raw)) continue;
+    const bodyId = typeof raw.bodyId === 'string' && bodies[raw.bodyId] && !bodies[raw.bodyId]!.isGround
+      ? raw.bodyId
+      : null;
+    if (!bodyId) continue;
+    const body = bodies[bodyId]!;
+    const material = isObject(raw.material) ? raw.material : {};
+    contactSpheres[id] = {
+      id,
+      name: str(raw.name, `Sphere ${Object.keys(contactSpheres).length + 1}`),
+      bodyId,
+      nodeId: typeof raw.nodeId === 'string' && body.nodes[raw.nodeId] ? raw.nodeId : body.originNodeId,
+      radius: Math.max(0, num(raw.radius, 0.1)),
+      material: {
+        stiffness: Math.max(0, num(material.stiffness, 1000)),
+        damping: Math.max(0, num(material.damping, 10)),
+      },
+      enabled: bool(raw.enabled, true),
+    };
+  }
+  const contactSphereOrder = Array.isArray(value.contactSphereOrder)
+    ? value.contactSphereOrder.filter((id): id is string => typeof id === 'string' && id in contactSpheres)
+    : [];
+  for (const id of Object.keys(contactSpheres)) if (!contactSphereOrder.includes(id)) contactSphereOrder.push(id);
+
+  const contactPlanes: Record<string, ContactPlane> = {};
+  const rawPlanes = isObject(value.contactPlanes) ? value.contactPlanes : {};
+  for (const [id, raw] of Object.entries(rawPlanes)) {
+    if (!isObject(raw)) continue;
+    const material = isObject(raw.material) ? raw.material : {};
+    const normal = vec3(raw.normal, [0, 0, 1]);
+    if (Math.hypot(...normal) < 1e-12) normal[2] = 1;
+    contactPlanes[id] = {
+      id,
+      name: str(raw.name, `Plane ${Object.keys(contactPlanes).length + 1}`),
+      point: vec3(raw.point),
+      normal,
+      material: {
+        stiffness: Math.max(0, num(material.stiffness, 1000)),
+        damping: Math.max(0, num(material.damping, 10)),
+      },
+      enabled: bool(raw.enabled, true),
+    };
+  }
+  const contactPlaneOrder = Array.isArray(value.contactPlaneOrder)
+    ? value.contactPlaneOrder.filter((id): id is string => typeof id === 'string' && id in contactPlanes)
+    : [];
+  for (const id of Object.keys(contactPlanes)) if (!contactPlaneOrder.includes(id)) contactPlaneOrder.push(id);
+
   const selectedBodyId =
     typeof value.selectedBodyId === 'string' && bodies[value.selectedBodyId]
       ? value.selectedBodyId
@@ -383,6 +441,10 @@ export function repairModel(value: unknown): ModelPersisted | null {
     hingeOrder,
     actuators,
     actuatorOrder,
+    contactSpheres,
+    contactSphereOrder,
+    contactPlanes,
+    contactPlaneOrder,
     settings: repairSettings(value.settings),
     conventions: repairConventions(value.conventions),
     selectedBodyId,

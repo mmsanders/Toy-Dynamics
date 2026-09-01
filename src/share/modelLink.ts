@@ -72,6 +72,10 @@ type EncodedModel = {
   b: EncodedBody[];
   h: EncodedHinge[];
   a: EncodedActuator[];
+  /** `[name, body, node, radius, stiffness, damping, enabled]`. */
+  cs?: [string, number, number, number, number, number, 0 | 1][];
+  /** `[name, point, normal, stiffness, damping, enabled]`. */
+  cp?: [string, number[], number[], number, number, 0 | 1][];
   /** `[units, gx, gy, gz, dt, duration, integrator, sampleRate]`. */
   s: [string, number, number, number, number, number, string, number];
   /** `[upAxis, eulerOrder, rotationMode, angleUnit]`. */
@@ -183,6 +187,19 @@ export function encodeModel(model: ModelPersisted): string {
     b: bodies,
     h: hinges,
     a: actuators,
+    cs: model.contactSphereOrder.flatMap((id) => {
+      const sphere = model.contactSpheres[id];
+      if (!sphere) return [];
+      return [[sphere.name, bodyIndex.get(sphere.bodyId) ?? 0,
+        nodeIndex.get(sphere.bodyId)?.get(sphere.nodeId) ?? 0, round(sphere.radius),
+        round(sphere.material.stiffness), round(sphere.material.damping), sphere.enabled ? 1 : 0]];
+    }),
+    cp: model.contactPlaneOrder.flatMap((id) => {
+      const plane = model.contactPlanes[id];
+      if (!plane) return [];
+      return [[plane.name, roundAll(plane.point), roundAll(plane.normal),
+        round(plane.material.stiffness), round(plane.material.damping), plane.enabled ? 1 : 0]];
+    }),
     s: [
       model.settings.units,
       ...(roundAll(model.settings.gravity) as [number, number, number]),
@@ -353,6 +370,28 @@ export function decodeModel(encoded: string): ModelPersisted | null {
     };
   });
 
+  const contactSpheres: Record<string, unknown> = {};
+  const contactSphereOrder: string[] = [];
+  (Array.isArray(payload.cs) ? payload.cs : []).forEach((sphere, i) => {
+    const id = `cs${i}`;
+    contactSphereOrder.push(id);
+    contactSpheres[id] = {
+      name: sphere?.[0], bodyId: bodyIds[Number(sphere?.[1])],
+      nodeId: nodeIds[Number(sphere?.[1])]?.[Number(sphere?.[2])], radius: sphere?.[3],
+      material: { stiffness: sphere?.[4], damping: sphere?.[5] }, enabled: sphere?.[6] !== 0,
+    };
+  });
+  const contactPlanes: Record<string, unknown> = {};
+  const contactPlaneOrder: string[] = [];
+  (Array.isArray(payload.cp) ? payload.cp : []).forEach((plane, i) => {
+    const id = `cp${i}`;
+    contactPlaneOrder.push(id);
+    contactPlanes[id] = {
+      name: plane?.[0], point: plane?.[1], normal: plane?.[2],
+      material: { stiffness: plane?.[3], damping: plane?.[4] }, enabled: plane?.[5] !== 0,
+    };
+  });
+
   const s = Array.isArray(payload.s) ? payload.s : [];
   const c = Array.isArray(payload.c) ? payload.c : [];
 
@@ -363,6 +402,10 @@ export function decodeModel(encoded: string): ModelPersisted | null {
     hingeOrder,
     actuators,
     actuatorOrder,
+    contactSpheres,
+    contactSphereOrder,
+    contactPlanes,
+    contactPlaneOrder,
     settings: {
       units: s[0],
       gravity: [s[1], s[2], s[3]],
