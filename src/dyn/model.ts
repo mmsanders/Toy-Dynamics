@@ -127,10 +127,37 @@ export type ActuatorSpec = {
   profile: (t: number) => number;
 };
 
+/** Material parameters for the deliberately compliant contact model. */
+export type ContactMaterialSpec = {
+  /** Penalty stiffness in force per unit penetration. */
+  stiffness: number;
+  /** Damping in force per unit closing speed. */
+  damping: number;
+};
+
+/** A sphere fixed to a body. `point` is its centre in body coordinates. */
+export type ContactSphereSpec = {
+  name: string;
+  body: number;
+  point: readonly number[];
+  radius: number;
+  material: ContactMaterialSpec;
+};
+
+/** A fixed world plane whose normal points into its allowed half-space. */
+export type ContactPlaneSpec = {
+  name: string;
+  point: readonly number[];
+  normal: readonly number[];
+  material: ContactMaterialSpec;
+};
+
 export type ModelSpec = {
   bodies: BodySpec[];
   hinges: HingeSpec[];
   actuators?: ActuatorSpec[];
+  contactSpheres?: ContactSphereSpec[];
+  contactPlanes?: ContactPlaneSpec[];
   gravity: readonly number[];
 };
 
@@ -152,6 +179,25 @@ export type CompiledActuator = {
   /** In link coordinates when body-fixed, in world coordinates when world-fixed. */
   vector: V3;
   profile: (t: number) => number;
+};
+
+export type CompiledContactSphere = {
+  name: string;
+  link: number;
+  /** Centre in link coordinates. */
+  point: V3;
+  radius: number;
+  stiffness: number;
+  damping: number;
+};
+
+export type CompiledContactPlane = {
+  name: string;
+  point: V3;
+  /** Unit world normal pointing into the allowed half-space. */
+  normal: V3;
+  stiffness: number;
+  damping: number;
 };
 
 /**
@@ -207,6 +253,8 @@ export type MultibodyModel = {
   /** One per velocity coordinate, in the same order. */
   dofBindings: DofBinding[];
   actuators: CompiledActuator[];
+  contactSpheres: CompiledContactSphere[];
+  contactPlanes: CompiledContactPlane[];
 };
 
 const DOF_SUFFIX = ['tx', 'ty', 'tz', 'rx', 'ry', 'rz'];
@@ -352,7 +400,62 @@ export function buildModel(spec: ModelSpec): MultibodyModel {
     dofNames,
     dofBindings,
     actuators: compileActuators(spec, linkOfBody, spec.hinges),
+    contactSpheres: compileContactSpheres(spec, linkOfBody, spec.hinges),
+    contactPlanes: compileContactPlanes(spec),
   };
+}
+
+function bodyPointToLink(point: readonly number[], hinge: HingeSpec): V3 {
+  const pc = hinge.childNodePos;
+  const qc = m3FromQuat(hinge.childNodeQuat);
+  const dx = (point[0] ?? 0) - (pc[0] ?? 0);
+  const dy = (point[1] ?? 0) - (pc[1] ?? 0);
+  const dz = (point[2] ?? 0) - (pc[2] ?? 0);
+  return v3(
+    qc[0]! * dx + qc[3]! * dy + qc[6]! * dz,
+    qc[1]! * dx + qc[4]! * dy + qc[7]! * dz,
+    qc[2]! * dx + qc[5]! * dy + qc[8]! * dz,
+  );
+}
+
+function compileContactSpheres(
+  spec: ModelSpec,
+  linkOfBody: Map<number, number>,
+  hinges: HingeSpec[],
+): CompiledContactSphere[] {
+  const out: CompiledContactSphere[] = [];
+  for (const sphere of spec.contactSpheres ?? []) {
+    const link = linkOfBody.get(sphere.body);
+    if (link === undefined) continue;
+    out.push({
+      name: sphere.name,
+      link,
+      point: bodyPointToLink(sphere.point, hinges[link]!),
+      radius: Math.max(0, sphere.radius),
+      stiffness: Math.max(0, sphere.material.stiffness),
+      damping: Math.max(0, sphere.material.damping),
+    });
+  }
+  return out;
+}
+
+function compileContactPlanes(spec: ModelSpec): CompiledContactPlane[] {
+  const out: CompiledContactPlane[] = [];
+  for (const plane of spec.contactPlanes ?? []) {
+    const nx = plane.normal[0] ?? 0;
+    const ny = plane.normal[1] ?? 0;
+    const nz = plane.normal[2] ?? 0;
+    const length = Math.hypot(nx, ny, nz);
+    if (!(length > 0) || !Number.isFinite(length)) continue;
+    out.push({
+      name: plane.name,
+      point: v3(plane.point[0] ?? 0, plane.point[1] ?? 0, plane.point[2] ?? 0),
+      normal: v3(nx / length, ny / length, nz / length),
+      stiffness: Math.max(0, plane.material.stiffness),
+      damping: Math.max(0, plane.material.damping),
+    });
+  }
+  return out;
 }
 
 /**
@@ -376,17 +479,9 @@ function compileActuators(
     const link = linkOfBody.get(act.body);
     if (link === undefined) continue;
     const hinge = hinges[link]!;
-    const pc = hinge.childNodePos;
     const qc = m3FromQuat(hinge.childNodeQuat);
 
-    const dx = (act.point[0] ?? 0) - (pc[0] ?? 0);
-    const dy = (act.point[1] ?? 0) - (pc[1] ?? 0);
-    const dz = (act.point[2] ?? 0) - (pc[2] ?? 0);
-    const point = v3(
-      qc[0]! * dx + qc[3]! * dy + qc[6]! * dz,
-      qc[1]! * dx + qc[4]! * dy + qc[7]! * dz,
-      qc[2]! * dx + qc[5]! * dy + qc[8]! * dz,
-    );
+    const point = bodyPointToLink(act.point, hinge);
 
     const vx = act.vector[0] ?? 0, vy = act.vector[1] ?? 0, vz = act.vector[2] ?? 0;
     const vector =
