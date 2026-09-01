@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { decodeModel, encodeModel } from './modelLink';
 import { initialModel } from '../store/defaults';
-import type { ModelPersisted } from '../store/modelRepair';
 import { GROUND_ID } from '../types';
+import type { ModelPersisted } from '../store/modelRepair';
 
 /**
  * Share-link round-tripping.
@@ -22,6 +22,8 @@ const snapshot = (): ModelPersisted => {
     hingeOrder: model.hingeOrder,
     actuators: model.actuators,
     actuatorOrder: model.actuatorOrder,
+    springDampers: model.springDampers,
+    springDamperOrder: model.springDamperOrder,
     contactSpheres: model.contactSpheres,
     contactSphereOrder: model.contactSphereOrder,
     contactPlanes: model.contactPlanes,
@@ -31,6 +33,7 @@ const snapshot = (): ModelPersisted => {
     selectedBodyId: model.selectedBodyId,
     selectedHingeId: model.selectedHingeId,
     selectedActuatorId: model.selectedActuatorId,
+    selectedSpringDamperId: model.selectedSpringDamperId,
   };
 };
 
@@ -73,6 +76,24 @@ describe('share links', () => {
     expect(plane.normal).toEqual([0, 0, 1]);
     expect(plane.size).toBe(7.5);
     expect(plane.material).toEqual({ stiffness: 3000, damping: 40, friction: 0.6, frictionVelocity: 0.03 });
+  });
+
+  it('round-trips two-node spring-damper devices', () => {
+    const original = snapshot();
+    original.springDampers.coupler = {
+      id: 'coupler', name: 'Elbow return',
+      bodyAId: GROUND_ID, nodeAId: 'ground-origin', bodyBId: 'lower', nodeBId: 'lower-tip',
+      stiffness: 125, damping: 4.5, restLength: 0.8, enabled: true, color: '#fb7185',
+    };
+    original.springDamperOrder.push('coupler');
+
+    const decoded = decodeModel(encodeModel(original))!;
+    expect(decoded.springDamperOrder).toHaveLength(1);
+    const device = decoded.springDampers[decoded.springDamperOrder[0]!]!;
+    expect(decoded.bodies[device.bodyAId]!.isGround).toBe(true);
+    expect(decoded.bodies[device.bodyBId]!.name).toBe('Forearm');
+    expect(decoded.bodies[device.bodyBId]!.nodes[device.nodeBId]!.name).toBe('Tip');
+    expect(device).toMatchObject({ stiffness: 125, damping: 4.5, restLength: 0.8 });
   });
 
   it('preserves mass properties exactly', () => {

@@ -29,6 +29,23 @@ test('boots with the example model', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test('adds and edits a two-node spring-damper', async ({ page }) => {
+  const errors = await openApp(page);
+  await page.getByRole('tab', { name: 'Actuators' }).click();
+  await page.getByRole('button', { name: 'Spring-dampers' }).click();
+  await expect(page.getByText('No spring-dampers.')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Add a spring-damper' }).click();
+  await expect(page.getByRole('combobox', { name: 'End A body' })).toHaveValue('ground');
+  await expect(page.getByRole('combobox', { name: 'End B body' })).toHaveValue('upper');
+
+  const stiffness = page.getByRole('textbox', { name: 'Stiffness' });
+  await stiffness.fill('250');
+  await stiffness.press('Enter');
+  await expect(stiffness).toHaveValue('250');
+  expect(errors).toEqual([]);
+});
+
 test('computes a trajectory in the worker and reports it', async ({ page }) => {
   const errors = await openApp(page);
   await page.getByRole('tab', { name: 'Run' }).click();

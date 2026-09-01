@@ -67,11 +67,18 @@ type EncodedActuator = [
   color: string,
 ];
 
+/** `[name, bodyA, nodeA, bodyB, nodeB, stiffness, damping, restLength, enabled, color]`. */
+type EncodedSpringDamper = [
+  string, number, number, number, number, number, number, number, 0 | 1, string,
+];
+
 type EncodedModel = {
   v: number;
   b: EncodedBody[];
   h: EncodedHinge[];
   a: EncodedActuator[];
+  /** Optional so links made before spring-dampers were introduced keep decoding. */
+  sd?: EncodedSpringDamper[];
   /** `[name, body, node, radius, stiffness, damping, enabled, friction?, frictionVelocity?]`. */
   cs?: [string, number, number, number, number, number, 0 | 1, number?, number?][];
   /** `[name, point, normal, stiffness, damping, enabled, displaySize?, friction?, frictionVelocity?]`. */
@@ -182,11 +189,28 @@ export function encodeModel(model: ModelPersisted): string {
       ];
     });
 
+  const springDampers: EncodedSpringDamper[] = model.springDamperOrder
+    .map((id) => model.springDampers[id])
+    .filter((device): device is NonNullable<typeof device> => Boolean(device))
+    .map((device) => [
+      device.name,
+      bodyIndex.get(device.bodyAId) ?? 0,
+      nodeIndex.get(device.bodyAId)?.get(device.nodeAId) ?? 0,
+      bodyIndex.get(device.bodyBId) ?? 0,
+      nodeIndex.get(device.bodyBId)?.get(device.nodeBId) ?? 0,
+      round(device.stiffness),
+      round(device.damping),
+      round(device.restLength),
+      device.enabled ? 1 : 0,
+      device.color,
+    ]);
+
   const payload: EncodedModel = {
     v: FORMAT_VERSION,
     b: bodies,
     h: hinges,
     a: actuators,
+    sd: springDampers,
     cs: model.contactSphereOrder.flatMap((id) => {
       const sphere = model.contactSpheres[id];
       if (!sphere) return [];
@@ -372,6 +396,25 @@ export function decodeModel(encoded: string): ModelPersisted | null {
     };
   });
 
+  const springDampers: Record<string, unknown> = {};
+  const springDamperOrder: string[] = [];
+  (Array.isArray(payload.sd) ? payload.sd : []).forEach((device, i) => {
+    const id = `sd${i}`;
+    springDamperOrder.push(id);
+    springDampers[id] = {
+      name: device?.[0],
+      bodyAId: bodyIds[Number(device?.[1])],
+      nodeAId: nodeIds[Number(device?.[1])]?.[Number(device?.[2])],
+      bodyBId: bodyIds[Number(device?.[3])],
+      nodeBId: nodeIds[Number(device?.[3])]?.[Number(device?.[4])],
+      stiffness: device?.[5],
+      damping: device?.[6],
+      restLength: device?.[7],
+      enabled: device?.[8] !== 0,
+      color: device?.[9],
+    };
+  });
+
   const contactSpheres: Record<string, unknown> = {};
   const contactSphereOrder: string[] = [];
   (Array.isArray(payload.cs) ? payload.cs : []).forEach((sphere, i) => {
@@ -405,6 +448,8 @@ export function decodeModel(encoded: string): ModelPersisted | null {
     hingeOrder,
     actuators,
     actuatorOrder,
+    springDampers,
+    springDamperOrder,
     contactSpheres,
     contactSphereOrder,
     contactPlanes,
@@ -421,6 +466,7 @@ export function decodeModel(encoded: string): ModelPersisted | null {
     selectedBodyId: bodyOrder[1] ?? bodyOrder[0],
     selectedHingeId: hingeOrder[0] ?? null,
     selectedActuatorId: actuatorOrder[0] ?? null,
+    selectedSpringDamperId: springDamperOrder[0] ?? null,
   });
 }
 

@@ -127,6 +127,20 @@ export type ActuatorSpec = {
   profile: (t: number) => number;
 };
 
+/** A passive force element between two body-fixed points, or a point and world (body −1). */
+export type SpringDamperSpec = {
+  name: string;
+  /** Index into `bodies`, or −1 for a fixed point in world coordinates. */
+  bodyA: number;
+  pointA: readonly number[];
+  /** Index into `bodies`, or −1 for a fixed point in world coordinates. */
+  bodyB: number;
+  pointB: readonly number[];
+  stiffness: number;
+  damping: number;
+  restLength: number;
+};
+
 /** Material parameters for the deliberately compliant contact model. */
 export type ContactMaterialSpec = {
   /** Penalty stiffness in force per unit penetration. */
@@ -158,6 +172,7 @@ export type ModelSpec = {
   bodies: BodySpec[];
   hinges: HingeSpec[];
   actuators?: ActuatorSpec[];
+  springDampers?: SpringDamperSpec[];
   contactSpheres?: ContactSphereSpec[];
   contactPlanes?: ContactPlaneSpec[];
   gravity: readonly number[];
@@ -181,6 +196,20 @@ export type CompiledActuator = {
   /** In link coordinates when body-fixed, in world coordinates when world-fixed. */
   vector: V3;
   profile: (t: number) => number;
+};
+
+/** A spring-damper with its body-frame attachment points resolved into link frames. */
+export type CompiledSpringDamper = {
+  name: string;
+  /** Link index, or −1 when the endpoint is fixed in the world. */
+  linkA: number;
+  pointA: V3;
+  /** Link index, or −1 when the endpoint is fixed in the world. */
+  linkB: number;
+  pointB: V3;
+  stiffness: number;
+  damping: number;
+  restLength: number;
 };
 
 export type CompiledContactSphere = {
@@ -259,6 +288,7 @@ export type MultibodyModel = {
   /** One per velocity coordinate, in the same order. */
   dofBindings: DofBinding[];
   actuators: CompiledActuator[];
+  springDampers: CompiledSpringDamper[];
   contactSpheres: CompiledContactSphere[];
   contactPlanes: CompiledContactPlane[];
 };
@@ -406,6 +436,7 @@ export function buildModel(spec: ModelSpec): MultibodyModel {
     dofNames,
     dofBindings,
     actuators: compileActuators(spec, linkOfBody, spec.hinges),
+    springDampers: compileSpringDampers(spec, linkOfBody, spec.hinges),
     contactSpheres: compileContactSpheres(spec, linkOfBody, spec.hinges),
     contactPlanes: compileContactPlanes(spec),
   };
@@ -504,6 +535,38 @@ function compileActuators(
         : v3(vx, vy, vz);
 
     out.push({ name: act.name, link, kind: act.kind, frame: act.frame, point, vector, profile: act.profile });
+  }
+  return out;
+}
+
+/**
+ * Resolve each spring-damper endpoint into the corresponding link frame once at build
+ * time. An endpoint on ground is already a point in the world frame and keeps link −1.
+ */
+function compileSpringDampers(
+  spec: ModelSpec,
+  linkOfBody: Map<number, number>,
+  hinges: HingeSpec[],
+): CompiledSpringDamper[] {
+  const out: CompiledSpringDamper[] = [];
+  for (const device of spec.springDampers ?? []) {
+    const linkA = device.bodyA < 0 ? -1 : linkOfBody.get(device.bodyA);
+    const linkB = device.bodyB < 0 ? -1 : linkOfBody.get(device.bodyB);
+    if (linkA === undefined || linkB === undefined || linkA === linkB) continue;
+    out.push({
+      name: device.name,
+      linkA,
+      pointA: linkA < 0
+        ? v3(device.pointA[0] ?? 0, device.pointA[1] ?? 0, device.pointA[2] ?? 0)
+        : bodyPointToLink(device.pointA, hinges[linkA]!),
+      linkB,
+      pointB: linkB < 0
+        ? v3(device.pointB[0] ?? 0, device.pointB[1] ?? 0, device.pointB[2] ?? 0)
+        : bodyPointToLink(device.pointB, hinges[linkB]!),
+      stiffness: Math.max(0, device.stiffness),
+      damping: Math.max(0, device.damping),
+      restLength: Math.max(0, device.restLength),
+    });
   }
   return out;
 }

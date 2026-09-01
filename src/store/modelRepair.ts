@@ -12,6 +12,7 @@ import {
   type Profile,
   type Quat,
   type SimSettings,
+  type SpringDamper,
   type Vec3,
 } from '../types';
 import {
@@ -23,6 +24,7 @@ import {
   IDENTITY_QUAT,
   makeNode,
   neutralDof,
+  SPRING_DAMPER_COLORS,
 } from './defaults';
 import { wouldCreateCycle } from '../model/topology';
 
@@ -47,6 +49,8 @@ export type ModelPersisted = {
   hingeOrder: string[];
   actuators: Record<string, Actuator>;
   actuatorOrder: string[];
+  springDampers: Record<string, SpringDamper>;
+  springDamperOrder: string[];
   contactSpheres: Record<string, ContactSphere>;
   contactSphereOrder: string[];
   contactPlanes: Record<string, ContactPlane>;
@@ -56,6 +60,7 @@ export type ModelPersisted = {
   selectedBodyId: string;
   selectedHingeId: string | null;
   selectedActuatorId: string | null;
+  selectedSpringDamperId: string | null;
 };
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -377,6 +382,38 @@ export function repairModel(value: unknown): ModelPersisted | null {
     : [];
   for (const id of Object.keys(actuators)) if (!actuatorOrder.includes(id)) actuatorOrder.push(id);
 
+  const rawSpringDampers = isObject(value.springDampers) ? value.springDampers : {};
+  const springDampers: Record<string, SpringDamper> = {};
+  let springDamperIndex = 0;
+  for (const [id, raw] of Object.entries(rawSpringDampers)) {
+    if (!isObject(raw)) continue;
+    const bodyAId = typeof raw.bodyAId === 'string' && bodies[raw.bodyAId] ? raw.bodyAId : null;
+    const bodyBId = typeof raw.bodyBId === 'string' && bodies[raw.bodyBId] ? raw.bodyBId : null;
+    // A two-terminal device on one rigid body cannot change length, so it can only create
+    // a meaningless internal load. Preserve the structural invariant during repair too.
+    if (!bodyAId || !bodyBId || bodyAId === bodyBId) continue;
+    const bodyA = bodies[bodyAId]!;
+    const bodyB = bodies[bodyBId]!;
+    springDampers[id] = {
+      id,
+      name: str(raw.name, `Spring-damper ${springDamperIndex + 1}`),
+      bodyAId,
+      nodeAId: typeof raw.nodeAId === 'string' && bodyA.nodes[raw.nodeAId] ? raw.nodeAId : bodyA.originNodeId,
+      bodyBId,
+      nodeBId: typeof raw.nodeBId === 'string' && bodyB.nodes[raw.nodeBId] ? raw.nodeBId : bodyB.originNodeId,
+      stiffness: Math.max(0, num(raw.stiffness, 100)),
+      damping: Math.max(0, num(raw.damping, 1)),
+      restLength: Math.max(0, num(raw.restLength, 1)),
+      enabled: bool(raw.enabled, true),
+      color: str(raw.color, SPRING_DAMPER_COLORS[springDamperIndex % SPRING_DAMPER_COLORS.length]!),
+    };
+    springDamperIndex++;
+  }
+  const springDamperOrder = Array.isArray(value.springDamperOrder)
+    ? value.springDamperOrder.filter((id): id is string => typeof id === 'string' && id in springDampers)
+    : [];
+  for (const id of Object.keys(springDampers)) if (!springDamperOrder.includes(id)) springDamperOrder.push(id);
+
   const contactSpheres: Record<string, ContactSphere> = {};
   const rawSpheres = isObject(value.contactSpheres) ? value.contactSpheres : {};
   for (const [id, raw] of Object.entries(rawSpheres)) {
@@ -446,6 +483,8 @@ export function repairModel(value: unknown): ModelPersisted | null {
     hingeOrder,
     actuators,
     actuatorOrder,
+    springDampers,
+    springDamperOrder,
     contactSpheres,
     contactSphereOrder,
     contactPlanes,
@@ -461,5 +500,9 @@ export function repairModel(value: unknown): ModelPersisted | null {
       typeof value.selectedActuatorId === 'string' && actuators[value.selectedActuatorId]
         ? value.selectedActuatorId
         : (actuatorOrder[0] ?? null),
+    selectedSpringDamperId:
+      typeof value.selectedSpringDamperId === 'string' && springDampers[value.selectedSpringDamperId]
+        ? value.selectedSpringDamperId
+        : (springDamperOrder[0] ?? null),
   };
 }

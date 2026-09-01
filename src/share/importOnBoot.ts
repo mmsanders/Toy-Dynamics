@@ -56,6 +56,8 @@ function snapshotCurrent(): ModelPersisted {
     hingeOrder: store.hingeOrder,
     actuators: store.actuators,
     actuatorOrder: store.actuatorOrder,
+    springDampers: store.springDampers,
+    springDamperOrder: store.springDamperOrder,
     contactSpheres: store.contactSpheres,
     contactSphereOrder: store.contactSphereOrder,
     contactPlanes: store.contactPlanes,
@@ -65,6 +67,7 @@ function snapshotCurrent(): ModelPersisted {
     selectedBodyId: store.selectedBodyId,
     selectedHingeId: store.selectedHingeId,
     selectedActuatorId: store.selectedActuatorId,
+    selectedSpringDamperId: store.selectedSpringDamperId,
   };
 }
 

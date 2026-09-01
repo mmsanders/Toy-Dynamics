@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Actuator, Body, Hinge, Quat, SimSettings, Vec3 } from '../types';
+import type { Actuator, Body, Hinge, Quat, SimSettings, SpringDamper, Vec3 } from '../types';
 import { buildSpec } from '../model/adapter';
 import {
   buildModel,
@@ -31,8 +31,9 @@ export function buildSolverModel(
   hinges: Record<string, Hinge>,
   actuators: Record<string, Actuator>,
   settings: SimSettings,
+  springDampers: Record<string, SpringDamper> = {},
 ): SolverModel | { error: string } {
-  const built = buildSpec(bodies, hinges, actuators, settings);
+  const built = buildSpec(bodies, hinges, actuators, settings, {}, {}, springDampers);
   if (!built.ok) return { error: built.problems[0]?.message ?? 'The model could not be assembled.' };
   try {
     return { model: buildModel(built.spec), linkOf: built.bodyIndex };

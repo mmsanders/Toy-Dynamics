@@ -13,6 +13,7 @@ import { GroundGrid } from './GroundGrid';
 import { BodyView } from './BodyView';
 import { HingeView } from './HingeView';
 import { ActuatorView } from './ActuatorView';
+import { SpringDamperView } from './SpringDamperView';
 import { ContactPlaneView, ContactSphereView } from './ContactView';
 
 /**
@@ -130,6 +131,7 @@ export function SceneCanvas({ trajectory, frameIndex }: Props) {
   const bodies = useModelStore((s) => s.bodies);
   const hinges = useModelStore((s) => s.hinges);
   const actuators = useModelStore((s) => s.actuators);
+  const springDampers = useModelStore((s) => s.springDampers);
   const contactSpheres = useModelStore((s) => s.contactSpheres);
   const contactPlanes = useModelStore((s) => s.contactPlanes);
   const settings = useModelStore((s) => s.settings);
@@ -137,16 +139,18 @@ export function SceneCanvas({ trajectory, frameIndex }: Props) {
   const selectedBodyId = useModelStore((s) => s.selectedBodyId);
   const selectedHingeId = useModelStore((s) => s.selectedHingeId);
   const selectedActuatorId = useModelStore((s) => s.selectedActuatorId);
+  const selectedSpringDamperId = useModelStore((s) => s.selectedSpringDamperId);
   const selectBody = useModelStore((s) => s.selectBody);
   const selectHinge = useModelStore((s) => s.selectHinge);
   const selectActuator = useModelStore((s) => s.selectActuator);
+  const selectSpringDamper = useModelStore((s) => s.selectSpringDamper);
 
   const isDesktop = useMediaQuery(DESKTOP_QUERY);
   const mount = useMemo(() => mountQuaternion(upAxis), [upAxis]);
 
   const solver = useMemo(
-    () => buildSolverModel(bodies, hinges, actuators, settings),
-    [bodies, hinges, actuators, settings],
+    () => buildSolverModel(bodies, hinges, actuators, settings, springDampers),
+    [bodies, hinges, actuators, settings, springDampers],
   );
 
   const poses = useMemo(() => {
@@ -282,6 +286,18 @@ export function SceneCanvas({ trajectory, frameIndex }: Props) {
             scale={scale}
             reference={actuatorReference}
             onSelect={() => selectActuator(actuator.id)}
+          />
+        ))}
+
+        {Object.values(springDampers).map((device) => (
+          <SpringDamperView
+            key={device.id}
+            device={device}
+            bodies={bodies}
+            poses={poses}
+            selected={device.id === selectedSpringDamperId}
+            scale={scale}
+            onSelect={() => selectSpringDamper(device.id)}
           />
         ))}
 
