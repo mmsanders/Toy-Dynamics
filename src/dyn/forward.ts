@@ -96,6 +96,11 @@ export type Dynamics = {
   spherePosition: V3[];
   sphereVelocity: V3[];
   sphereAngularVelocity: V3[];
+  /** Cached endpoint positions and velocities for each spring-damper. */
+  springPositionA: V3[];
+  springVelocityA: V3[];
+  springPositionB: V3[];
+  springVelocityB: V3[];
   /** Scratch for a contact point expressed in link coordinates. */
   scratchP: V3;
   /** Plane pairs first, then sphere pairs in stable nested-loop order. */
@@ -134,6 +139,10 @@ export function makeDynamics(model: MultibodyModel): Dynamics {
     spherePosition: model.contactSpheres.map(() => v3()),
     sphereVelocity: model.contactSpheres.map(() => v3()),
     sphereAngularVelocity: model.contactSpheres.map(() => v3()),
+    springPositionA: model.springDampers.map(() => v3()),
+    springVelocityA: model.springDampers.map(() => v3()),
+    springPositionB: model.springDampers.map(() => v3()),
+    springVelocityB: model.springDampers.map(() => v3()),
     scratchP: v3(),
     activeContact: new Uint8Array(contactPairCount),
     contactSetInitialized: false,
@@ -206,6 +215,80 @@ function applyActuators(d: Dynamics, t: number): void {
       f[5] = f[5]! + z;
     }
     d.fext[act.link] = f;
+  }
+}
+
+/** World position and velocity of a point attached to a link, or a fixed world point. */
+function endpointKinematics(
+  d: Dynamics,
+  linkIndex: number,
+  point: V3,
+  position: V3,
+  velocity: V3,
+): void {
+  if (linkIndex < 0) {
+    position.set(point);
+    velocity.fill(0);
+    return;
+  }
+
+  const link = d.model.links[linkIndex]!;
+  const e = link.Xworld.E;
+  // Xworld maps world to link, so its transpose carries the local point outward.
+  position[0] = e[0]! * point[0]! + e[3]! * point[1]! + e[6]! * point[2]! + link.Xworld.r[0]!;
+  position[1] = e[1]! * point[0]! + e[4]! * point[1]! + e[7]! * point[2]! + link.Xworld.r[1]!;
+  position[2] = e[2]! * point[0]! + e[5]! * point[1]! + e[8]! * point[2]! + link.Xworld.r[2]!;
+
+  const wx = link.v[0]!, wy = link.v[1]!, wz = link.v[2]!;
+  const localX = link.v[3]! + wy * point[2]! - wz * point[1]!;
+  const localY = link.v[4]! + wz * point[0]! - wx * point[2]!;
+  const localZ = link.v[5]! + wx * point[1]! - wy * point[0]!;
+  velocity[0] = e[0]! * localX + e[3]! * localY + e[6]! * localZ;
+  velocity[1] = e[1]! * localX + e[4]! * localY + e[7]! * localZ;
+  velocity[2] = e[2]! * localX + e[5]! * localY + e[8]! * localZ;
+}
+
+function updateSpringDamperEndpoints(d: Dynamics): void {
+  for (let i = 0; i < d.model.springDampers.length; i++) {
+    const device = d.model.springDampers[i]!;
+    endpointKinematics(d, device.linkA, device.pointA, d.springPositionA[i]!, d.springVelocityA[i]!);
+    endpointKinematics(d, device.linkB, device.pointB, d.springPositionB[i]!, d.springVelocityB[i]!);
+  }
+}
+
+/** Apply equal and opposite axial spring-damper forces at each pair of endpoints. */
+function applySpringDampers(d: Dynamics): void {
+  if (d.model.springDampers.length === 0) return;
+  updateSpringDamperEndpoints(d);
+  const force = d.scratchV;
+
+  for (let i = 0; i < d.model.springDampers.length; i++) {
+    const device = d.model.springDampers[i]!;
+    const a = d.springPositionA[i]!;
+    const b = d.springPositionB[i]!;
+    const va = d.springVelocityA[i]!;
+    const vb = d.springVelocityB[i]!;
+    const dx = b[0]! - a[0]!, dy = b[1]! - a[1]!, dz = b[2]! - a[2]!;
+    const length = Math.hypot(dx, dy, dz);
+    // A collapsed device has no physical direction. Skipping it is finite and deterministic.
+    if (!(length > 1e-12)) continue;
+
+    const nx = dx / length, ny = dy / length, nz = dz / length;
+    const separatingSpeed = nx * (vb[0]! - va[0]!) + ny * (vb[1]! - va[1]!) + nz * (vb[2]! - va[2]!);
+    const magnitude = device.stiffness * (length - device.restLength) + device.damping * separatingSpeed;
+    if (!Number.isFinite(magnitude) || magnitude === 0) continue;
+
+    // Positive magnitude pulls A toward B; the opposite wrench on B is exact.
+    force[0] = nx * magnitude;
+    force[1] = ny * magnitude;
+    force[2] = nz * magnitude;
+    if (device.linkA >= 0) addForceAtPoint(d, device.linkA, device.pointA, force);
+    if (device.linkB >= 0) {
+      force[0] = -force[0]!;
+      force[1] = -force[1]!;
+      force[2] = -force[2]!;
+      addForceAtPoint(d, device.linkB, device.pointB, force);
+    }
   }
 }
 
@@ -389,6 +472,21 @@ function contactPotentialEnergy(d: Dynamics): number {
   return energy;
 }
 
+/** Elastic energy stored in the two-node springs. Dampers store no energy. */
+function springDamperPotentialEnergy(d: Dynamics): number {
+  if (d.model.springDampers.length === 0) return 0;
+  updateSpringDamperEndpoints(d);
+  let energy = 0;
+  for (let i = 0; i < d.model.springDampers.length; i++) {
+    const device = d.model.springDampers[i]!;
+    const a = d.springPositionA[i]!;
+    const b = d.springPositionB[i]!;
+    const extension = Math.hypot(b[0]! - a[0]!, b[1]! - a[1]!, b[2]! - a[2]!) - device.restLength;
+    energy += 0.5 * device.stiffness * extension * extension;
+  }
+  return energy;
+}
+
 /**
  * Joint-local generalized forces: springs, dampers, Coulomb friction and travel stops.
  *
@@ -554,6 +652,7 @@ export function forwardDynamics(
   crba(model, d.H, d.crbaScratch);
   clearExternalForces(d);
   applyActuators(d, t);
+  applySpringDampers(d);
   applyContacts(d, settleDt > 0);
 
   // Fast path: no breakaway forces anywhere, so none of the machinery below can apply.
@@ -636,6 +735,7 @@ export function totalEnergy(d: Dynamics, q: Float64Array, v: Float64Array): { ki
   }
 
   potential += contactPotentialEnergy(d);
+  potential += springDamperPotentialEnergy(d);
 
   return { kinetic, potential, total: kinetic + potential };
 }

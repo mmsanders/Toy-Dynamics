@@ -1,5 +1,5 @@
-import { GROUND_ID, type Actuator, type Body, type ContactPlane, type ContactSphere, type Hinge, type Profile, type SimSettings } from '../types';
-import type { ActuatorSpec, BodySpec, DofParams, HingeSpec, ModelSpec } from '../dyn/model';
+import { GROUND_ID, type Actuator, type Body, type ContactPlane, type ContactSphere, type Hinge, type Profile, type SimSettings, type SpringDamper } from '../types';
+import type { ActuatorSpec, BodySpec, DofParams, HingeSpec, ModelSpec, SpringDamperSpec } from '../dyn/model';
 import { compileExpr } from '../dyn/expr';
 import { orderHingeIds } from './topology';
 
@@ -17,9 +17,10 @@ export type BuildResult =
   | { ok: false; problems: BuildProblem[] };
 
 export type BuildProblem = {
-  kind: 'cycle' | 'orphan' | 'expression' | 'missing';
+  kind: 'cycle' | 'orphan' | 'expression' | 'missing' | 'springDamper';
   message: string;
   targetId?: string;
+  targetKind?: 'actuator' | 'hinge' | 'springDamper';
 };
 
 /**
@@ -100,6 +101,7 @@ export function buildSpec(
   settings: SimSettings,
   contactSpheres: Record<string, ContactSphere> = {},
   contactPlanes: Record<string, ContactPlane> = {},
+  springDampers: Record<string, SpringDamper> = {},
 ): BuildResult {
   const problems: BuildProblem[] = [];
 
@@ -256,12 +258,60 @@ export function buildSpec(
       material: { ...plane.material },
     }));
 
+  const springDamperSpecs: SpringDamperSpec[] = [];
+  for (const device of Object.values(springDampers)) {
+    if (!device.enabled) continue;
+    const bodyA = bodies[device.bodyAId];
+    const bodyB = bodies[device.bodyBId];
+    if (!bodyA || !bodyB) {
+      problems.push({
+        kind: 'missing',
+        message: `"${device.name}" points at a body that no longer exists.`,
+        targetId: device.id,
+        targetKind: 'springDamper',
+      });
+      continue;
+    }
+    if (device.bodyAId === device.bodyBId) {
+      problems.push({
+        kind: 'springDamper',
+        message: `"${device.name}" must connect nodes on two different bodies.`,
+        targetId: device.id,
+        targetKind: 'springDamper',
+      });
+      continue;
+    }
+    const nodeA = bodyA.nodes[device.nodeAId] ?? bodyA.nodes[bodyA.originNodeId];
+    const nodeB = bodyB.nodes[device.nodeBId] ?? bodyB.nodes[bodyB.originNodeId];
+    if (!nodeA || !nodeB) {
+      problems.push({
+        kind: 'missing',
+        message: `"${device.name}" attaches to a node that no longer exists.`,
+        targetId: device.id,
+        targetKind: 'springDamper',
+      });
+      continue;
+    }
+    springDamperSpecs.push({
+      name: device.name,
+      // Ground is the fixed world frame, which the solver denotes with −1.
+      bodyA: device.bodyAId === GROUND_ID ? -1 : (bodyIndex.get(device.bodyAId) ?? -1),
+      pointA: [...nodeA.position],
+      bodyB: device.bodyBId === GROUND_ID ? -1 : (bodyIndex.get(device.bodyBId) ?? -1),
+      pointB: [...nodeB.position],
+      stiffness: device.stiffness,
+      damping: device.damping,
+      restLength: device.restLength,
+    });
+  }
+
   return {
     ok: true,
     spec: {
       bodies: bodySpecs,
       hinges: hingeSpecs,
       actuators: actuatorSpecs,
+      springDampers: springDamperSpecs,
       contactSpheres: sphereSpecs,
       contactPlanes: planeSpecs,
       gravity: settings.gravity,

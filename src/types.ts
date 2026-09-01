@@ -221,6 +221,35 @@ export type Actuator = {
 };
 
 // ---------------------------------------------------------------------------
+// Spring-damper devices
+// ---------------------------------------------------------------------------
+
+/**
+ * A passive two-terminal force element between nodes on two different bodies.
+ *
+ * The force follows the straight line from A to B.  `restLength` is the length at
+ * which the spring contribution is zero; damping opposes the endpoints' relative
+ * speed along that same line.  Ground is a body too, so a device may anchor a
+ * moving body to a ground node.
+ */
+export type SpringDamper = {
+  id: string;
+  name: string;
+  bodyAId: string;
+  nodeAId: string;
+  bodyBId: string;
+  nodeBId: string;
+  /** Force per unit extension or compression. */
+  stiffness: number;
+  /** Force per unit relative speed along the device axis. */
+  damping: number;
+  /** Unloaded end-to-end distance. */
+  restLength: number;
+  enabled: boolean;
+  color: string;
+};
+
+// ---------------------------------------------------------------------------
 // Contact geometry
 // ---------------------------------------------------------------------------
 

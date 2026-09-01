@@ -1,4 +1,4 @@
-import { GROUND_ID, type Actuator, type Body, type ContactPlane, type ContactSphere, type Hinge, type SimSettings, type UnitSystem, type Vec3 } from '../types';
+import { GROUND_ID, type Actuator, type Body, type ContactPlane, type ContactSphere, type Hinge, type SimSettings, type SpringDamper, type UnitSystem, type Vec3 } from '../types';
 import { buildModel, pointToWorld } from '../dyn/model';
 import { makeDynamics } from '../dyn/forward';
 import { crba, factorize } from '../dyn/crba';
@@ -42,7 +42,7 @@ export type Diagnostic = {
   severity: DiagnosticSeverity;
   title: string;
   detail: string;
-  target?: { kind: 'body' | 'hinge' | 'actuator' | 'settings'; id: string };
+  target?: { kind: 'body' | 'hinge' | 'actuator' | 'springDamper' | 'settings'; id: string };
   fix?: DiagnosticFix;
 };
 
@@ -89,6 +89,7 @@ export function runDiagnostics(
   settings: SimSettings,
   contactSpheres: Record<string, ContactSphere> = {},
   contactPlanes: Record<string, ContactPlane> = {},
+  springDampers: Record<string, SpringDamper> = {},
 ): Diagnostic[] {
   const out: Diagnostic[] = [];
   const system = UNIT_SYSTEMS[settings.units];
@@ -96,7 +97,7 @@ export function runDiagnostics(
   const lengthUnit = unitLabel(settings.units, 'length');
   const inertiaUnit = unitLabel(settings.units, 'inertia');
 
-  const built = buildSpec(bodies, hinges, actuators, settings, contactSpheres, contactPlanes);
+  const built = buildSpec(bodies, hinges, actuators, settings, contactSpheres, contactPlanes, springDampers);
 
   // Contact data is deliberately editable even when implausible; diagnose it before the
   // compiler clamps invalid values or drops a plane with no usable normal.
@@ -136,6 +137,26 @@ export function runDiagnostics(
       });
     }
   }
+  for (const device of Object.values(springDampers)) {
+    if (device.bodyAId === device.bodyBId) {
+      out.push({
+        id: `spring-damper-same-body:${device.id}`,
+        severity: 'warning',
+        title: `${device.name} attaches to one body twice`,
+        detail: 'A spring-damper must connect nodes on two different bodies. This device is ignored by the solver.',
+        target: { kind: 'springDamper', id: device.id },
+      });
+    }
+    if (device.stiffness < 0 || device.damping < 0 || device.restLength < 0) {
+      out.push({
+        id: `spring-damper-values:${device.id}`,
+        severity: 'warning',
+        title: `${device.name} has a negative property`,
+        detail: 'Stiffness, damping, and rest length must be non-negative. The solver clamps invalid values.',
+        target: { kind: 'springDamper', id: device.id },
+      });
+    }
+  }
 
   // --- structural problems surfaced by the build -----------------------------------
   for (const problem of built.problems ?? []) {
@@ -149,14 +170,16 @@ export function runDiagnostics(
             ? 'Expression will not parse'
             : problem.kind === 'orphan'
               ? 'Actuator has no effect'
+              : problem.kind === 'springDamper'
+                ? 'Spring-damper needs attention'
               : 'Dangling reference',
       detail: problem.message,
       ...(problem.targetId
         ? {
             target: {
-              kind: (problem.kind === 'expression' || problem.kind === 'orphan'
+              kind: (problem.targetKind ?? (problem.kind === 'expression' || problem.kind === 'orphan'
                 ? 'actuator'
-                : 'hinge') as 'actuator' | 'hinge',
+                : 'hinge')) as 'actuator' | 'hinge' | 'springDamper',
               id: problem.targetId,
             },
           }

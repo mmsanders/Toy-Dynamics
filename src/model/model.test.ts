@@ -183,9 +183,40 @@ describe('deleting a body', () => {
     expect(useModelStore.getState().actuators.drive).toBeUndefined();
   });
 
+  it('takes any spring-damper attached to the deleted body with it', () => {
+    const id = useModelStore.getState().addSpringDamper();
+    expect(id).not.toBeNull();
+    expect(useModelStore.getState().springDampers[id!]).toBeDefined();
+    useModelStore.getState().removeBody('upper');
+    expect(useModelStore.getState().springDampers[id!]).toBeUndefined();
+  });
+
   it('refuses to delete ground', () => {
     useModelStore.getState().removeBody(GROUND_ID);
     expect(useModelStore.getState().bodies[GROUND_ID]).toBeDefined();
+  });
+});
+
+describe('spring-damper devices', () => {
+  it('keeps endpoints on different bodies and stores the editable properties', () => {
+    const id = useModelStore.getState().addSpringDamper();
+    expect(id).not.toBeNull();
+    const device = useModelStore.getState().springDampers[id!]!;
+    expect(device.bodyAId).toBe(GROUND_ID);
+    expect(device.bodyBId).toBe('upper');
+
+    // The store is the backstop behind the picker: invalid programmatic edits are refused.
+    useModelStore.getState().setSpringDamperEndpoint(id!, 'a', 'upper');
+    expect(useModelStore.getState().springDampers[id!]!.bodyAId).toBe(GROUND_ID);
+
+    useModelStore.getState().setSpringDamperEndpoint(id!, 'b', 'lower', 'lower-tip');
+    useModelStore.getState().setSpringDamper(id!, { stiffness: 42, damping: 3, restLength: 1.25 });
+    const edited = useModelStore.getState().springDampers[id!]!;
+    expect(edited.bodyBId).toBe('lower');
+    expect(edited.nodeBId).toBe('lower-tip');
+    expect(edited.stiffness).toBe(42);
+    expect(edited.damping).toBe(3);
+    expect(edited.restLength).toBe(1.25);
   });
 });
 

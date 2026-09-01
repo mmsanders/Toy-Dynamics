@@ -18,6 +18,7 @@ import {
   type Profile,
   type Quat,
   type SimSettings,
+  type SpringDamper,
   type UnitSystem,
   type Vec3,
 } from '../types';
@@ -29,6 +30,7 @@ import {
   makeNode,
   neutralDof,
   neutralDofSet,
+  SPRING_DAMPER_COLORS,
   type ModelSlice,
 } from './defaults';
 import { inboundHinge, wouldCreateCycle } from '../model/topology';
@@ -97,6 +99,14 @@ export type ModelState = ModelSlice & {
   setActuatorVector: (id: string, vector: Vec3) => void;
   setActuatorProfile: (id: string, profile: Profile) => void;
   toggleActuator: (id: string) => void;
+
+  selectSpringDamper: (id: string | null) => void;
+  addSpringDamper: () => string | null;
+  removeSpringDamper: (id: string) => void;
+  renameSpringDamper: (id: string, name: string) => void;
+  setSpringDamperEndpoint: (id: string, end: 'a' | 'b', bodyId: string, nodeId?: string) => void;
+  setSpringDamper: (id: string, patch: Partial<Pick<SpringDamper, 'stiffness' | 'damping' | 'restLength'>>) => void;
+  toggleSpringDamper: (id: string) => void;
 
   addContactSphere: (bodyId?: string) => string | null;
   removeContactSphere: (id: string) => void;
@@ -194,6 +204,8 @@ export function modelSnapshot(state: ModelState): ModelPersisted {
     hingeOrder: state.hingeOrder,
     actuators: state.actuators,
     actuatorOrder: state.actuatorOrder,
+    springDampers: state.springDampers,
+    springDamperOrder: state.springDamperOrder,
     contactSpheres: state.contactSpheres,
     contactSphereOrder: state.contactSphereOrder,
     contactPlanes: state.contactPlanes,
@@ -203,6 +215,7 @@ export function modelSnapshot(state: ModelState): ModelPersisted {
     selectedBodyId: state.selectedBodyId,
     selectedHingeId: state.selectedHingeId,
     selectedActuatorId: state.selectedActuatorId,
+    selectedSpringDamperId: state.selectedSpringDamperId,
   };
 }
 
@@ -312,12 +325,18 @@ export const useModelStore = create<ModelState>()(
             bodies[grandparentId] = { ...grandparent, nodes: rehomed, nodeOrder: rehomedOrder };
           }
 
-          // Actuators on the deleted body go with it — there is nothing left to push on.
+          // Attachments on the deleted body go with it — there is nothing left to push on
+          // or connect to.
           const actuators = { ...state.actuators };
           for (const actuator of Object.values(actuators)) {
             if (actuator.bodyId === id) delete actuators[actuator.id];
           }
           const actuatorOrder = state.actuatorOrder.filter((a) => actuators[a]);
+          const springDampers = { ...state.springDampers };
+          for (const springDamper of Object.values(springDampers)) {
+            if (springDamper.bodyAId === id || springDamper.bodyBId === id) delete springDampers[springDamper.id];
+          }
+          const springDamperOrder = state.springDamperOrder.filter((device) => springDampers[device]);
           const contactSpheres = { ...state.contactSpheres };
           for (const sphere of Object.values(contactSpheres)) {
             if (sphere.bodyId === id) delete contactSpheres[sphere.id];
@@ -335,6 +354,8 @@ export const useModelStore = create<ModelState>()(
             hingeOrder,
             actuators,
             actuatorOrder,
+            springDampers,
+            springDamperOrder,
             contactSpheres,
             contactSphereOrder,
             selectedBodyId: state.selectedBodyId === id ? fallbackBody : state.selectedBodyId,
@@ -346,6 +367,10 @@ export const useModelStore = create<ModelState>()(
               state.selectedActuatorId && actuators[state.selectedActuatorId]
                 ? state.selectedActuatorId
                 : (actuatorOrder[actuatorOrder.length - 1] ?? null),
+            selectedSpringDamperId:
+              state.selectedSpringDamperId && springDampers[state.selectedSpringDamperId]
+                ? state.selectedSpringDamperId
+                : (springDamperOrder[springDamperOrder.length - 1] ?? null),
           };
         }),
 
@@ -428,13 +453,18 @@ export const useModelStore = create<ModelState>()(
           if (!body || body.nodeOrder.length <= 1) return state;
           // The origin and centre of mass are structural; they are reassigned, not deleted.
           if (nodeId === body.originNodeId || nodeId === body.comNodeId) return state;
-          // A node a hinge or actuator hangs off cannot vanish underneath it.
+          // A node an attachment hangs off cannot vanish underneath it.
           const inUse =
             Object.values(state.hinges).some(
               (h) =>
                 (h.parentBodyId === bodyId && h.parentNodeId === nodeId) ||
                 (h.childBodyId === bodyId && h.childNodeId === nodeId),
             ) || Object.values(state.actuators).some((a) => a.bodyId === bodyId && a.nodeId === nodeId)
+              || Object.values(state.springDampers).some(
+                (device) =>
+                  (device.bodyAId === bodyId && device.nodeAId === nodeId) ||
+                  (device.bodyBId === bodyId && device.nodeBId === nodeId),
+              )
               || Object.values(state.contactSpheres).some((sphere) => sphere.bodyId === bodyId && sphere.nodeId === nodeId);
           if (inUse) return state;
 
@@ -694,6 +724,96 @@ export const useModelStore = create<ModelState>()(
           const actuator = state.actuators[id];
           return actuator
             ? { actuators: { ...state.actuators, [id]: { ...actuator, enabled: !actuator.enabled } } }
+            : state;
+        }),
+
+      // --- spring-damper devices -----------------------------------------------------
+
+      selectSpringDamper: (id) => set({ selectedSpringDamperId: id }),
+
+      addSpringDamper: () => {
+        const state = get();
+        const moving = state.bodyOrder.find((bodyId) => !state.bodies[bodyId]?.isGround);
+        const ground = state.bodies[GROUND_ID];
+        if (!moving || !ground) return null;
+
+        const id = nextId('spring-damper');
+        set((current) => {
+          const body = current.bodies[moving]!;
+          const device: SpringDamper = {
+            id,
+            name: uniqueName(Object.values(current.springDampers), `Spring-damper ${current.springDamperOrder.length + 1}`),
+            bodyAId: GROUND_ID,
+            nodeAId: ground.originNodeId,
+            bodyBId: moving,
+            nodeBId: body.nodeOrder[body.nodeOrder.length - 1] ?? body.originNodeId,
+            stiffness: 100,
+            damping: 1,
+            restLength: 1,
+            enabled: true,
+            color: pickColor(Object.values(current.springDampers), SPRING_DAMPER_COLORS),
+          };
+          return {
+            springDampers: { ...current.springDampers, [id]: device },
+            springDamperOrder: [...current.springDamperOrder, id],
+            selectedSpringDamperId: id,
+          };
+        });
+        return id;
+      },
+
+      removeSpringDamper: (id) =>
+        set((state) => {
+          if (!state.springDampers[id]) return state;
+          const springDampers = { ...state.springDampers };
+          delete springDampers[id];
+          const springDamperOrder = state.springDamperOrder.filter((entry) => entry !== id);
+          return {
+            springDampers,
+            springDamperOrder,
+            selectedSpringDamperId:
+              state.selectedSpringDamperId === id
+                ? (springDamperOrder[springDamperOrder.length - 1] ?? null)
+                : state.selectedSpringDamperId,
+          };
+        }),
+
+      renameSpringDamper: (id, name) =>
+        set((state) => {
+          const device = state.springDampers[id];
+          return device
+            ? { springDampers: { ...state.springDampers, [id]: { ...device, name } } }
+            : state;
+        }),
+
+      setSpringDamperEndpoint: (id, end, bodyId, nodeId) =>
+        set((state) => {
+          const device = state.springDampers[id];
+          const body = state.bodies[bodyId];
+          if (!device || !body) return state;
+          const otherBodyId = end === 'a' ? device.bodyBId : device.bodyAId;
+          if (bodyId === otherBodyId) return state;
+          const node = nodeId && body.nodes[nodeId] ? nodeId : body.originNodeId;
+          const next =
+            end === 'a'
+              ? { ...device, bodyAId: bodyId, nodeAId: node }
+              : { ...device, bodyBId: bodyId, nodeBId: node };
+          return { springDampers: { ...state.springDampers, [id]: next } };
+        }),
+
+      setSpringDamper: (id, patch) =>
+        set((state) => {
+          const device = state.springDampers[id];
+          return device
+            ? { springDampers: { ...state.springDampers, [id]: { ...device, ...patch } } }
+            : state;
+        }),
+
+      toggleSpringDamper: (id) =>
+        set((state) => {
+          const device = state.springDampers[id];
+          return device
+            ? { springDampers: { ...state.springDampers, [id]: { ...device, enabled: !device.enabled } } }
             : state;
         }),
 

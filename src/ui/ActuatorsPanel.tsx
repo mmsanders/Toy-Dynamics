@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { Profile } from '../types';
 import { useModelStore } from '../store/useModelStore';
 import { compileExpr, EXPR_FUNCTION_NAMES } from '../dyn/expr';
@@ -7,6 +7,7 @@ import { AXIS_COLORS } from '../theme';
 import { NumberField } from './NumberField';
 import { Segmented } from './Segmented';
 import { EmptyState, IconButton, ListRow, Note, Picker, Section, TextField } from './Bits';
+import { SpringDampersPanel } from './SpringDampersPanel';
 
 /**
  * Actuators: a force or a moment at a node.
@@ -49,6 +50,24 @@ function defaultProfile(kind: Profile['kind']): Profile {
 }
 
 export function ActuatorsPanel() {
+  const [mode, setMode] = useState<'actuators' | 'springDampers'>('actuators');
+  return (
+    <div className="stack">
+      <Segmented
+        label="Force source"
+        value={mode}
+        options={[
+          { value: 'actuators', label: 'Actuators', title: 'One-body forces and moments with time profiles' },
+          { value: 'springDampers', label: 'Spring-dampers', title: 'Passive forces between two body nodes' },
+        ]}
+        onChange={setMode}
+      />
+      {mode === 'actuators' ? <ActuatorEditor /> : <SpringDampersPanel />}
+    </div>
+  );
+}
+
+function ActuatorEditor() {
   const bodies = useModelStore((s) => s.bodies);
   const actuators = useModelStore((s) => s.actuators);
   const actuatorOrder = useModelStore((s) => s.actuatorOrder);

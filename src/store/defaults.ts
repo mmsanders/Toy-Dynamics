@@ -10,6 +10,7 @@ import {
   type Node,
   type Quat,
   type SimSettings,
+  type SpringDamper,
 } from '../types';
 
 /**
@@ -33,6 +34,7 @@ export const BODY_COLORS = [
 ];
 
 export const ACTUATOR_COLORS = ['#fbbf24', '#22d3ee', '#f472b6', '#a3e635', '#c084fc'];
+export const SPRING_DAMPER_COLORS = ['#fb7185', '#38bdf8', '#a3e635', '#fbbf24', '#c084fc'];
 
 export const DEFAULT_CONVENTIONS: Conventions = {
   upAxis: 'Z',
@@ -95,6 +97,8 @@ export type ModelSlice = {
   hingeOrder: string[];
   actuators: Record<string, Actuator>;
   actuatorOrder: string[];
+  springDampers: Record<string, SpringDamper>;
+  springDamperOrder: string[];
   contactSpheres: Record<string, ContactSphere>;
   contactSphereOrder: string[];
   contactPlanes: Record<string, ContactPlane>;
@@ -104,6 +108,7 @@ export type ModelSlice = {
   selectedBodyId: string;
   selectedHingeId: string | null;
   selectedActuatorId: string | null;
+  selectedSpringDamperId: string | null;
 };
 
 /**
@@ -198,6 +203,8 @@ export function initialModel(): ModelSlice {
     hingeOrder: [shoulder.id, elbow.id],
     actuators: { [drive.id]: drive },
     actuatorOrder: [drive.id],
+    springDampers: {},
+    springDamperOrder: [],
     contactSpheres: {},
     contactSphereOrder: [],
     contactPlanes: {},
@@ -207,5 +214,6 @@ export function initialModel(): ModelSlice {
     selectedBodyId: upper.id,
     selectedHingeId: shoulder.id,
     selectedActuatorId: drive.id,
+    selectedSpringDamperId: null,
   };
 }

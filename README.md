@@ -65,6 +65,11 @@ Identical numbers, completely different motion.
 Actuators run on a time profile — constant, step, ramp, sine, impulse — or on an arbitrary
 `f(t)` expression when none of those fits.
 
+**Spring-dampers** are passive two-node devices, edited beside actuators. They connect nodes
+on different bodies (including Ground as a fixed anchor), apply equal-and-opposite axial
+forces, and expose stiffness, damping, and rest length. Their elastic energy is included in
+the run's energy readout; damping correctly removes energy from the system.
+
 ## The dynamics
 
 Reduced coordinates over a tree, integrated with a hand-written spatial-vector solver. For a

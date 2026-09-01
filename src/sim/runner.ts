@@ -1,4 +1,4 @@
-import type { Actuator, Body, ContactPlane, ContactSphere, Hinge, SimSettings } from '../types';
+import type { Actuator, Body, ContactPlane, ContactSphere, Hinge, SimSettings, SpringDamper } from '../types';
 import { buildSpec } from '../model/adapter';
 import { buildModel, type MultibodyModel } from '../dyn/model';
 import { makeDynamics, totalEnergy, type Dynamics } from '../dyn/forward';
@@ -28,6 +28,7 @@ export type RunInput = {
   bodies: Record<string, Body>;
   hinges: Record<string, Hinge>;
   actuators: Record<string, Actuator>;
+  springDampers?: Record<string, SpringDamper>;
   contactSpheres: Record<string, ContactSphere>;
   contactPlanes: Record<string, ContactPlane>;
   settings: SimSettings;
@@ -91,6 +92,9 @@ function isPassive(input: RunInput): boolean {
   for (const actuator of Object.values(input.actuators)) {
     if (actuator.enabled) return false;
   }
+  for (const device of Object.values(input.springDampers ?? {})) {
+    if (device.enabled && device.damping !== 0) return false;
+  }
   for (const hinge of Object.values(input.hinges)) {
     for (const dof of hinge.dof) {
       if (!dof.free) continue;
@@ -102,7 +106,7 @@ function isPassive(input: RunInput): boolean {
 }
 
 export function createRun(input: RunInput): Run | { error: string } {
-  const built = buildSpec(input.bodies, input.hinges, input.actuators, input.settings, input.contactSpheres, input.contactPlanes);
+  const built = buildSpec(input.bodies, input.hinges, input.actuators, input.settings, input.contactSpheres, input.contactPlanes, input.springDampers ?? {});
   if (!built.ok) {
     return { error: built.problems[0]?.message ?? 'The model could not be assembled.' };
   }
