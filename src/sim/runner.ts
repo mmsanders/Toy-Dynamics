@@ -77,13 +77,15 @@ function isPassive(input: RunInput): boolean {
   const planes = Object.values(input.contactPlanes).filter((plane) => plane.enabled);
   for (const sphere of spheres) {
     for (const plane of planes) {
-      if (Math.min(sphere.material.damping, plane.material.damping) > 0) return false;
+      if (Math.min(sphere.material.damping, plane.material.damping) > 0
+          || Math.min(sphere.material.friction, plane.material.friction) > 0) return false;
     }
   }
   for (let i = 0; i < spheres.length; i++) {
     for (let j = i + 1; j < spheres.length; j++) {
       if (spheres[i]!.bodyId !== spheres[j]!.bodyId
-          && Math.min(spheres[i]!.material.damping, spheres[j]!.material.damping) > 0) return false;
+          && (Math.min(spheres[i]!.material.damping, spheres[j]!.material.damping) > 0
+            || Math.min(spheres[i]!.material.friction, spheres[j]!.material.friction) > 0)) return false;
     }
   }
   for (const actuator of Object.values(input.actuators)) {

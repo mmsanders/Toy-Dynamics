@@ -396,6 +396,8 @@ export function repairModel(value: unknown): ModelPersisted | null {
       material: {
         stiffness: Math.max(0, num(material.stiffness, 1000)),
         damping: Math.max(0, num(material.damping, 10)),
+        friction: Math.max(0, num(material.friction, 0)),
+        frictionVelocity: Math.max(Number.EPSILON, num(material.frictionVelocity, 0.01)),
       },
       enabled: bool(raw.enabled, true),
     };
@@ -421,6 +423,8 @@ export function repairModel(value: unknown): ModelPersisted | null {
       material: {
         stiffness: Math.max(0, num(material.stiffness, 1000)),
         damping: Math.max(0, num(material.damping, 10)),
+        friction: Math.max(0, num(material.friction, 0)),
+        frictionVelocity: Math.max(Number.EPSILON, num(material.frictionVelocity, 0.01)),
       },
       enabled: bool(raw.enabled, true),
     };

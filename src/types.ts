@@ -227,6 +227,9 @@ export type Actuator = {
 export type ContactMaterial = {
   stiffness: number;
   damping: number;
+  friction: number;
+  /** Tangential speed at which regularized friction reaches tanh(1) of its limit. */
+  frictionVelocity: number;
 };
 
 /** A sphere centred on a body node. Radius zero is an exact point contact. */

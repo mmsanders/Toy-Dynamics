@@ -52,13 +52,13 @@ describe('share links', () => {
     const original = snapshot();
     original.contactSpheres.ball = {
       id: 'ball', name: 'Foot', bodyId: 'lower', nodeId: 'lower-tip', radius: 0.12,
-      material: { stiffness: 2500, damping: 35 }, enabled: true,
+      material: { stiffness: 2500, damping: 35, friction: 0.4, frictionVelocity: 0.02 }, enabled: true,
     };
     original.contactSphereOrder.push('ball');
     original.contactPlanes.floor = {
       id: 'floor', name: 'Floor', point: [0, 0, -2], normal: [0, 0, 1],
       size: 7.5,
-      material: { stiffness: 3000, damping: 40 }, enabled: true,
+      material: { stiffness: 3000, damping: 40, friction: 0.6, frictionVelocity: 0.03 }, enabled: true,
     };
     original.contactPlaneOrder.push('floor');
 
@@ -68,11 +68,11 @@ describe('share links', () => {
     expect(decoded.bodies[sphere.bodyId]!.name).toBe('Forearm');
     expect(decoded.bodies[sphere.bodyId]!.nodes[sphere.nodeId]!.name).toBe('Tip');
     expect(sphere.radius).toBe(0.12);
-    expect(sphere.material).toEqual({ stiffness: 2500, damping: 35 });
+    expect(sphere.material).toEqual({ stiffness: 2500, damping: 35, friction: 0.4, frictionVelocity: 0.02 });
     expect(plane.point).toEqual([0, 0, -2]);
     expect(plane.normal).toEqual([0, 0, 1]);
     expect(plane.size).toBe(7.5);
-    expect(plane.material).toEqual({ stiffness: 3000, damping: 40 });
+    expect(plane.material).toEqual({ stiffness: 3000, damping: 40, friction: 0.6, frictionVelocity: 0.03 });
   });
 
   it('preserves mass properties exactly', () => {

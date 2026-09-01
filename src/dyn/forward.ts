@@ -227,7 +227,7 @@ function updateContactPoints(d: Dynamics): void {
   }
 }
 
-/** Detect and apply frictionless compliant sphere-plane and sphere-sphere contact. */
+/** Detect and apply compliant sphere-plane and sphere-sphere contact. */
 function applyContacts(d: Dynamics, settle: boolean): void {
   const { contactSpheres: spheres, contactPlanes: planes } = d.model;
   if (spheres.length === 0) return;
@@ -252,7 +252,17 @@ function applyContacts(d: Dynamics, settle: boolean): void {
         const stiffness = Math.min(sphere.stiffness, plane.stiffness);
         const damping = Math.min(sphere.damping, plane.damping);
         const magnitude = Math.max(0, stiffness * Math.max(0, penetration) - damping * Math.min(0, normalSpeed));
-        force[0] = nx * magnitude; force[1] = ny * magnitude; force[2] = nz * magnitude;
+        const tx = velocity[0]! - nx * normalSpeed;
+        const ty = velocity[1]! - ny * normalSpeed;
+        const tz = velocity[2]! - nz * normalSpeed;
+        const slip = Math.hypot(tx, ty, tz);
+        const friction = Math.min(sphere.friction, plane.friction);
+        const frictionScale = slip > 0
+          ? -friction * magnitude * Math.tanh(slip / Math.min(sphere.frictionVelocity, plane.frictionVelocity)) / slip
+          : 0;
+        force[0] = nx * magnitude + tx * frictionScale;
+        force[1] = ny * magnitude + ty * frictionScale;
+        force[2] = nz * magnitude + tz * frictionScale;
         addForceAtPoint(d, sphere.link, sphere.point, force);
       }
       pair++;
@@ -279,7 +289,16 @@ function applyContacts(d: Dynamics, settle: boolean): void {
         const stiffness = Math.min(a.stiffness, b.stiffness);
         const damping = Math.min(a.damping, b.damping);
         const magnitude = Math.max(0, stiffness * Math.max(0, penetration) - damping * Math.min(0, normalSpeed));
-        force[0] = -nx * magnitude; force[1] = -ny * magnitude; force[2] = -nz * magnitude;
+        const rvx = vb[0]! - va[0]!, rvy = vb[1]! - va[1]!, rvz = vb[2]! - va[2]!;
+        const tx = rvx - nx * normalSpeed, ty = rvy - ny * normalSpeed, tz = rvz - nz * normalSpeed;
+        const slip = Math.hypot(tx, ty, tz);
+        const friction = Math.min(a.friction, b.friction);
+        const frictionScale = slip > 0
+          ? friction * magnitude * Math.tanh(slip / Math.min(a.frictionVelocity, b.frictionVelocity)) / slip
+          : 0;
+        force[0] = -nx * magnitude + tx * frictionScale;
+        force[1] = -ny * magnitude + ty * frictionScale;
+        force[2] = -nz * magnitude + tz * frictionScale;
         addForceAtPoint(d, a.link, a.point, force);
         force[0] = -force[0]!; force[1] = -force[1]!; force[2] = -force[2]!;
         addForceAtPoint(d, b.link, b.point, force);
