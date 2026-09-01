@@ -322,6 +322,17 @@ describe('diagnostics', () => {
     expect(found?.fix?.kind).toBe('setTimestep');
   });
 
+  it('warns when a sphere can travel too far for discrete contact detection', () => {
+    const sphereId = useModelStore.getState().addContactSphere('lower')!;
+    useModelStore.getState().addContactPlane();
+    useModelStore.getState().setContactSphere(sphereId, { radius: 0.01 });
+    useModelStore.getState().setDof('elbow', 0, { free: true, u0: 100 });
+
+    const found = run().find((diagnostic) => diagnostic.id === 'contact-tunnelling');
+    expect(found?.fix?.kind).toBe('setTimestep');
+    expect(found?.detail).toMatch(/discrete/);
+  });
+
   it('notices when everything is locked', () => {
     for (const axis of [0, 1, 2, 3, 4, 5]) {
       useModelStore.getState().setDof('shoulder', axis, { free: false });

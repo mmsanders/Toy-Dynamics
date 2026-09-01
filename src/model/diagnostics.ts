@@ -52,6 +52,9 @@ const AXIS_SEPARATION_FLOOR = 0.05;
 /** `ωₙ·dt` above this and an explicit integrator starts misrepresenting the oscillation. */
 const STIFFNESS_STEP_LIMIT = 0.2;
 
+/** More than half a sphere radius per step makes discrete contact easy to skip. */
+const CONTACT_TRAVEL_LIMIT = 0.5;
+
 /** Ratio between radius of gyration and body size that suggests a unit mix-up. */
 const GYRATION_RATIO_LIMIT = 30;
 
@@ -353,7 +356,7 @@ export function runDiagnostics(
       const model = buildModel(built.spec);
       const dynamics = makeDynamics(model);
       const q = Float64Array.from(model.q0);
-      const v = new Float64Array(model.nv);
+      const v = Float64Array.from(model.v0);
       updateKinematics(model, q, v, dynamics.kin);
       updateVelocities(model, dynamics.kin);
       crba(model, dynamics.H, dynamics.crbaScratch);
@@ -363,6 +366,46 @@ export function runDiagnostics(
       const spherePositions = model.contactSpheres.map((sphere) =>
         pointToWorld(model.links[sphere.link]!, sphere.point, v3(), m3()),
       );
+
+      // Discrete contact only samples geometry at step boundaries. Warn when an initially
+      // moving finite-radius sphere can travel a substantial fraction of its radius in one
+      // step; exact point contacts have no meaningful length scale for this heuristic.
+      let worstTravelRatio = 0;
+      let worstTravelLabel = '';
+      let worstTravelSpeed = 0;
+      let worstTravelRadius = 0;
+      const hasPossibleContact = model.contactPlanes.length > 0 || model.contactSpheres.length > 1;
+      for (const sphere of hasPossibleContact ? model.contactSpheres : []) {
+        if (!(sphere.radius > 0)) continue;
+        const link = model.links[sphere.link]!;
+        const point = sphere.point;
+        const wx = link.v[0]!, wy = link.v[1]!, wz = link.v[2]!;
+        const lx = link.v[3]! + wy * point[2]! - wz * point[1]!;
+        const ly = link.v[4]! + wz * point[0]! - wx * point[2]!;
+        const lz = link.v[5]! + wx * point[1]! - wy * point[0]!;
+        // Rotation preserves magnitude, so the link-frame point speed is sufficient here.
+        const speed = Math.hypot(lx, ly, lz);
+        const ratio = speed * settings.dt / sphere.radius;
+        if (ratio > worstTravelRatio) {
+          worstTravelRatio = ratio;
+          worstTravelLabel = sphere.name;
+          worstTravelSpeed = speed;
+          worstTravelRadius = sphere.radius;
+        }
+      }
+      if (worstTravelRatio > CONTACT_TRAVEL_LIMIT) {
+        const suggested = CONTACT_TRAVEL_LIMIT * worstTravelRadius / worstTravelSpeed;
+        out.push({
+          id: 'contact-tunnelling',
+          severity: 'warning',
+          title: 'A contact sphere may cross a surface between steps',
+          detail:
+            `${worstTravelLabel} initially travels ${formatNumber(worstTravelRatio)} radii per step. ` +
+            `The contact model is discrete, so use a step near or below ${formatNumber(suggested)} to reduce tunnelling risk.`,
+          target: { kind: 'settings', id: 'dt' },
+          fix: { label: `Use dt = ${formatNumber(suggested)}`, kind: 'setTimestep', value: suggested },
+        });
+      }
       for (let i = 0; i < model.contactSpheres.length; i++) {
         const sphere = model.contactSpheres[i]!;
         const position = spherePositions[i]!;
