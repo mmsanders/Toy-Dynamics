@@ -15,13 +15,13 @@ export function ContactSphereView({ sphere, body, pose, scale }: { sphere: Conta
   </mesh>;
 }
 
-export function ContactPlaneView({ plane }: { plane: ContactPlane }) {
+export function ContactPlaneView({ plane, scale }: { plane: ContactPlane; scale: number }) {
   const quaternion = useMemo(() => {
     const normal = new THREE.Vector3(...plane.normal);
     if (normal.lengthSq() < 1e-18) return new THREE.Quaternion();
     return new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal.normalize());
   }, [plane.normal]);
-  const size = Math.max(0.01, plane.size);
+  const size = Math.max(2, scale * 4);
   return <group position={plane.point} quaternion={quaternion} visible={plane.enabled}>
     <mesh>
       <planeGeometry args={[size, size]} />

@@ -292,7 +292,7 @@ export function SceneCanvas({ trajectory, frameIndex }: Props) {
         })}
 
         {Object.values(contactPlanes).map((plane) => (
-          <ContactPlaneView key={plane.id} plane={plane} />
+          <ContactPlaneView key={plane.id} plane={plane} scale={scale} />
         ))}
       </group>
 
