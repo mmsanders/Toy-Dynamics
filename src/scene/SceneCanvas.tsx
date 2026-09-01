@@ -13,6 +13,7 @@ import { GroundGrid } from './GroundGrid';
 import { BodyView } from './BodyView';
 import { HingeView } from './HingeView';
 import { ActuatorView } from './ActuatorView';
+import { ContactPlaneView, ContactSphereView } from './ContactView';
 
 /**
  * The 3D view.
@@ -129,6 +130,8 @@ export function SceneCanvas({ trajectory, frameIndex }: Props) {
   const bodies = useModelStore((s) => s.bodies);
   const hinges = useModelStore((s) => s.hinges);
   const actuators = useModelStore((s) => s.actuators);
+  const contactSpheres = useModelStore((s) => s.contactSpheres);
+  const contactPlanes = useModelStore((s) => s.contactPlanes);
   const settings = useModelStore((s) => s.settings);
   const upAxis = useModelStore((s) => s.conventions.upAxis);
   const selectedBodyId = useModelStore((s) => s.selectedBodyId);
@@ -280,6 +283,16 @@ export function SceneCanvas({ trajectory, frameIndex }: Props) {
             reference={actuatorReference}
             onSelect={() => selectActuator(actuator.id)}
           />
+        ))}
+
+        {Object.values(contactSpheres).map((sphere) => {
+          const body = bodies[sphere.bodyId];
+          const pose = poses.get(sphere.bodyId);
+          return body && pose ? <ContactSphereView key={sphere.id} sphere={sphere} body={body} pose={pose} scale={scale} /> : null;
+        })}
+
+        {Object.values(contactPlanes).map((plane) => (
+          <ContactPlaneView key={plane.id} plane={plane} />
         ))}
       </group>
 

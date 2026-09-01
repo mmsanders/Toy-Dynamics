@@ -91,10 +91,19 @@ export type Dynamics = {
   reducedFactor: Factorization;
   /** Right-hand side, held across the breakaway passes so no pass allocates. */
   rhsBuffer: Float64Array;
+
+  /** Cached sphere world positions/velocities for allocation-free contact evaluation. */
+  spherePosition: V3[];
+  sphereVelocity: V3[];
+  /** Plane pairs first, then sphere pairs in stable nested-loop order. */
+  activeContact: Uint8Array;
+  contactSetInitialized: boolean;
 };
 
 export function makeDynamics(model: MultibodyModel): Dynamics {
   const nv = model.nv;
+  const sphereCount = model.contactSpheres.length;
+  const contactPairCount = sphereCount * model.contactPlanes.length + (sphereCount * (sphereCount - 1)) / 2;
   return {
     model,
     H: new Float64Array(nv * nv),
@@ -119,7 +128,33 @@ export function makeDynamics(model: MultibodyModel): Dynamics {
     reducedAcc: new Float64Array(nv),
     reducedFactor: makeFactorization(nv),
     rhsBuffer: new Float64Array(nv),
+    spherePosition: model.contactSpheres.map(() => v3()),
+    sphereVelocity: model.contactSpheres.map(() => v3()),
+    activeContact: new Uint8Array(contactPairCount),
+    contactSetInitialized: false,
   };
+}
+
+function clearExternalForces(d: Dynamics): void {
+  for (let i = 0; i < d.fext.length; i++) d.fext[i] = null;
+  for (const store of d.fextStorage) store.fill(0);
+}
+
+/** Add a world-frame force at a link-frame point to the link's external wrench. */
+function addForceAtPoint(d: Dynamics, linkIndex: number, point: V3, worldForce: V3): void {
+  const link = d.model.links[linkIndex]!;
+  const e = link.Xworld.E;
+  const x = e[0]! * worldForce[0]! + e[1]! * worldForce[1]! + e[2]! * worldForce[2]!;
+  const y = e[3]! * worldForce[0]! + e[4]! * worldForce[1]! + e[5]! * worldForce[2]!;
+  const z = e[6]! * worldForce[0]! + e[7]! * worldForce[1]! + e[8]! * worldForce[2]!;
+  const f = d.fextStorage[linkIndex]!;
+  f[0] = f[0]! + point[1]! * z - point[2]! * y;
+  f[1] = f[1]! + point[2]! * x - point[0]! * z;
+  f[2] = f[2]! + point[0]! * y - point[1]! * x;
+  f[3] = f[3]! + x;
+  f[4] = f[4]! + y;
+  f[5] = f[5]! + z;
+  d.fext[linkIndex] = f;
 }
 
 /**
@@ -131,10 +166,7 @@ export function makeDynamics(model: MultibodyModel): Dynamics {
  */
 function applyActuators(d: Dynamics, t: number): void {
   const { model } = d;
-  for (let i = 0; i < d.fext.length; i++) d.fext[i] = null;
   if (model.actuators.length === 0) return;
-
-  for (const store of d.fextStorage) store.fill(0);
 
   for (const act of model.actuators) {
     const scale = act.profile(t);
@@ -170,6 +202,124 @@ function applyActuators(d: Dynamics, t: number): void {
     }
     d.fext[act.link] = f;
   }
+}
+
+function updateContactPoints(d: Dynamics): void {
+  for (let i = 0; i < d.model.contactSpheres.length; i++) {
+    const sphere = d.model.contactSpheres[i]!;
+    const link = d.model.links[sphere.link]!;
+    const point = sphere.point;
+    const e = link.Xworld.E;
+    const position = d.spherePosition[i]!;
+    // Xworld maps world to link. Its transpose maps the local point to world.
+    position[0] = e[0]! * point[0]! + e[3]! * point[1]! + e[6]! * point[2]! + link.Xworld.r[0]!;
+    position[1] = e[1]! * point[0]! + e[4]! * point[1]! + e[7]! * point[2]! + link.Xworld.r[1]!;
+    position[2] = e[2]! * point[0]! + e[5]! * point[1]! + e[8]! * point[2]! + link.Xworld.r[2]!;
+
+    const wx = link.v[0]!, wy = link.v[1]!, wz = link.v[2]!;
+    const localX = link.v[3]! + wy * point[2]! - wz * point[1]!;
+    const localY = link.v[4]! + wz * point[0]! - wx * point[2]!;
+    const localZ = link.v[5]! + wx * point[1]! - wy * point[0]!;
+    const velocity = d.sphereVelocity[i]!;
+    velocity[0] = e[0]! * localX + e[3]! * localY + e[6]! * localZ;
+    velocity[1] = e[1]! * localX + e[4]! * localY + e[7]! * localZ;
+    velocity[2] = e[2]! * localX + e[5]! * localY + e[8]! * localZ;
+  }
+}
+
+/** Detect and apply frictionless compliant sphere-plane and sphere-sphere contact. */
+function applyContacts(d: Dynamics, settle: boolean): void {
+  const { contactSpheres: spheres, contactPlanes: planes } = d.model;
+  if (spheres.length === 0) return;
+  updateContactPoints(d);
+  const refresh = settle || !d.contactSetInitialized;
+  let pair = 0;
+  const force = d.scratchV;
+
+  for (let i = 0; i < spheres.length; i++) {
+    const sphere = spheres[i]!;
+    const position = d.spherePosition[i]!;
+    const velocity = d.sphereVelocity[i]!;
+    for (const plane of planes) {
+      const nx = plane.normal[0]!, ny = plane.normal[1]!, nz = plane.normal[2]!;
+      const distance = nx * (position[0]! - plane.point[0]!)
+        + ny * (position[1]! - plane.point[1]!)
+        + nz * (position[2]! - plane.point[2]!);
+      const penetration = sphere.radius - distance;
+      if (refresh) d.activeContact[pair] = penetration > 0 ? 1 : 0;
+      if (d.activeContact[pair]) {
+        const normalSpeed = nx * velocity[0]! + ny * velocity[1]! + nz * velocity[2]!;
+        const stiffness = Math.min(sphere.stiffness, plane.stiffness);
+        const damping = Math.min(sphere.damping, plane.damping);
+        const magnitude = Math.max(0, stiffness * Math.max(0, penetration) - damping * Math.min(0, normalSpeed));
+        force[0] = nx * magnitude; force[1] = ny * magnitude; force[2] = nz * magnitude;
+        addForceAtPoint(d, sphere.link, sphere.point, force);
+      }
+      pair++;
+    }
+  }
+
+  for (let i = 0; i < spheres.length; i++) {
+    for (let j = i + 1; j < spheres.length; j++) {
+      const a = spheres[i]!, b = spheres[j]!;
+      const pa = d.spherePosition[i]!, pb = d.spherePosition[j]!;
+      const dx = pb[0]! - pa[0]!, dy = pb[1]! - pa[1]!, dz = pb[2]! - pa[2]!;
+      const length = Math.hypot(dx, dy, dz);
+      const penetration = a.radius + b.radius - length;
+      // Spheres on one rigid link cannot move relative to one another and must not collide.
+      if (refresh) d.activeContact[pair] = a.link !== b.link && penetration > 0 ? 1 : 0;
+      if (d.activeContact[pair]) {
+        const invLength = length > 1e-12 ? 1 / length : 0;
+        // A deterministic fallback keeps coincident centres finite.
+        const nx = length > 1e-12 ? dx * invLength : 1;
+        const ny = length > 1e-12 ? dy * invLength : 0;
+        const nz = length > 1e-12 ? dz * invLength : 0;
+        const va = d.sphereVelocity[i]!, vb = d.sphereVelocity[j]!;
+        const normalSpeed = nx * (vb[0]! - va[0]!) + ny * (vb[1]! - va[1]!) + nz * (vb[2]! - va[2]!);
+        const stiffness = Math.min(a.stiffness, b.stiffness);
+        const damping = Math.min(a.damping, b.damping);
+        const magnitude = Math.max(0, stiffness * Math.max(0, penetration) - damping * Math.min(0, normalSpeed));
+        force[0] = -nx * magnitude; force[1] = -ny * magnitude; force[2] = -nz * magnitude;
+        addForceAtPoint(d, a.link, a.point, force);
+        force[0] = -force[0]!; force[1] = -force[1]!; force[2] = -force[2]!;
+        addForceAtPoint(d, b.link, b.point, force);
+      }
+      pair++;
+    }
+  }
+  if (refresh) d.contactSetInitialized = true;
+}
+
+/** Elastic energy stored by the compliant normal springs at the current configuration. */
+function contactPotentialEnergy(d: Dynamics): number {
+  const { contactSpheres: spheres, contactPlanes: planes } = d.model;
+  if (spheres.length === 0) return 0;
+  updateContactPoints(d);
+  let energy = 0;
+
+  for (let i = 0; i < spheres.length; i++) {
+    const sphere = spheres[i]!;
+    const position = d.spherePosition[i]!;
+    for (const plane of planes) {
+      const distance = plane.normal[0]! * (position[0]! - plane.point[0]!)
+        + plane.normal[1]! * (position[1]! - plane.point[1]!)
+        + plane.normal[2]! * (position[2]! - plane.point[2]!);
+      const penetration = Math.max(0, sphere.radius - distance);
+      energy += 0.5 * Math.min(sphere.stiffness, plane.stiffness) * penetration * penetration;
+    }
+  }
+
+  for (let i = 0; i < spheres.length; i++) {
+    for (let j = i + 1; j < spheres.length; j++) {
+      const a = spheres[i]!, b = spheres[j]!;
+      if (a.link === b.link) continue;
+      const pa = d.spherePosition[i]!, pb = d.spherePosition[j]!;
+      const distance = Math.hypot(pb[0]! - pa[0]!, pb[1]! - pa[1]!, pb[2]! - pa[2]!);
+      const penetration = Math.max(0, a.radius + b.radius - distance);
+      energy += 0.5 * Math.min(a.stiffness, b.stiffness) * penetration * penetration;
+    }
+  }
+  return energy;
 }
 
 /**
@@ -335,11 +485,13 @@ export function forwardDynamics(
   updateKinematics(model, q, v, d.kin);
   updateVelocities(model, d.kin);
   crba(model, d.H, d.crbaScratch);
+  clearExternalForces(d);
+  applyActuators(d, t);
+  applyContacts(d, settleDt > 0);
 
   // Fast path: no breakaway forces anywhere, so none of the machinery below can apply.
   if (!d.hasStiction) {
     jointForces(d, q, v);
-    applyActuators(d, t);
     rnea(model, null, d.fext, d.C, d.rneaScratch);
     const rhs = qdd;
     for (let i = 0; i < nv; i++) rhs[i] = d.tau[i]! - d.C[i]!;
@@ -355,7 +507,6 @@ export function forwardDynamics(
   // The bias forces and actuator loads do not depend on which axes are stuck, so they are
   // computed once and reused across the breakaway passes; only the joint-local forces and
   // the solve are repeated.
-  applyActuators(d, t);
   rnea(model, null, d.fext, d.C, d.rneaScratch);
 
   const rhs = d.rhsBuffer;
@@ -416,6 +567,8 @@ export function totalEnergy(d: Dynamics, q: Float64Array, v: Float64Array): { ki
     const wz = e[2]! * cx + e[5]! * cy + e[8]! * cz + link.Xworld.r[2]!;
     potential -= link.I.m * (g[0]! * wx + g[1]! * wy + g[2]! * wz);
   }
+
+  potential += contactPotentialEnergy(d);
 
   return { kinetic, potential, total: kinetic + potential };
 }

@@ -230,7 +230,7 @@ describe('unit systems', () => {
 describe('diagnostics', () => {
   const run = () => {
     const s = useModelStore.getState();
-    return runDiagnostics(s.bodies, s.hinges, s.actuators, s.settings);
+    return runDiagnostics(s.bodies, s.hinges, s.actuators, s.settings, s.contactSpheres, s.contactPlanes);
   };
   const ids = () => run().map((d) => d.id);
 
@@ -289,6 +289,37 @@ describe('diagnostics', () => {
 
     useModelStore.getState().applyFix(stiff!.fix!);
     expect(run().find((d) => d.id === 'stiff-timestep')).toBeUndefined();
+  });
+
+  it('flags invalid contact geometry and material values', () => {
+    const sphereId = useModelStore.getState().addContactSphere('lower')!;
+    const planeId = useModelStore.getState().addContactPlane();
+    useModelStore.getState().setContactSphere(sphereId, { radius: -1 });
+    useModelStore.getState().setContactMaterial('sphere', sphereId, { stiffness: -2 });
+    useModelStore.getState().setContactPlane(planeId, { normal: [0, 0, 0] });
+
+    expect(ids()).toContain(`contact-radius:${sphereId}`);
+    expect(ids()).toContain(`contact-material:sphere:${sphereId}`);
+    expect(ids()).toContain(`contact-normal:${planeId}`);
+  });
+
+  it('reports contact that begins penetrated', () => {
+    const sphereId = useModelStore.getState().addContactSphere('lower')!;
+    const planeId = useModelStore.getState().addContactPlane();
+    useModelStore.getState().setContactSphere(sphereId, { radius: 10 });
+    useModelStore.getState().setContactPlane(planeId, { point: [0, 0, 0], normal: [0, 0, 1] });
+
+    expect(ids().some((id) => id.startsWith('contact-overlap:plane:'))).toBe(true);
+  });
+
+  it('warns when the timestep cannot resolve contact stiffness', () => {
+    const sphereId = useModelStore.getState().addContactSphere('lower')!;
+    const planeId = useModelStore.getState().addContactPlane();
+    useModelStore.getState().setContactMaterial('sphere', sphereId, { stiffness: 1e9 });
+    useModelStore.getState().setContactMaterial('plane', planeId, { stiffness: 1e9 });
+
+    const found = run().find((diagnostic) => diagnostic.id === 'contact-stiff-timestep');
+    expect(found?.fix?.kind).toBe('setTimestep');
   });
 
   it('notices when everything is locked', () => {

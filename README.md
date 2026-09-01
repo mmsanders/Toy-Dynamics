@@ -16,7 +16,9 @@ This is deliberately a back-of-the-envelope tool. It trades fidelity for speed a
 *legible* — you should be able to see exactly what it did and why. That only works if you can
 also see when it has stopped being trustworthy, so a large part of it is devoted to saying so.
 
-It does **not** do contact or collision. Bodies pass through each other.
+It does **not** do contact or collision. Bodies pass through each other. A scoped feasibility
+assessment and staged implementation proposal for compliant sphere, plane, and optional
+heightfield contact is available in [the contact development plan](docs/contact-feasibility.md).
 
 ## The model
 

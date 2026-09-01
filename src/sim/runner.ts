@@ -1,4 +1,4 @@
-import type { Actuator, Body, Hinge, SimSettings } from '../types';
+import type { Actuator, Body, ContactPlane, ContactSphere, Hinge, SimSettings } from '../types';
 import { buildSpec } from '../model/adapter';
 import { buildModel, type MultibodyModel } from '../dyn/model';
 import { makeDynamics, totalEnergy, type Dynamics } from '../dyn/forward';
@@ -28,6 +28,8 @@ export type RunInput = {
   bodies: Record<string, Body>;
   hinges: Record<string, Hinge>;
   actuators: Record<string, Actuator>;
+  contactSpheres: Record<string, ContactSphere>;
+  contactPlanes: Record<string, ContactPlane>;
   settings: SimSettings;
 };
 
@@ -71,6 +73,19 @@ export type Run = {
 
 /** Whether anything in the model can change the total energy. */
 function isPassive(input: RunInput): boolean {
+  const spheres = Object.values(input.contactSpheres).filter((sphere) => sphere.enabled);
+  const planes = Object.values(input.contactPlanes).filter((plane) => plane.enabled);
+  for (const sphere of spheres) {
+    for (const plane of planes) {
+      if (Math.min(sphere.material.damping, plane.material.damping) > 0) return false;
+    }
+  }
+  for (let i = 0; i < spheres.length; i++) {
+    for (let j = i + 1; j < spheres.length; j++) {
+      if (spheres[i]!.bodyId !== spheres[j]!.bodyId
+          && Math.min(spheres[i]!.material.damping, spheres[j]!.material.damping) > 0) return false;
+    }
+  }
   for (const actuator of Object.values(input.actuators)) {
     if (actuator.enabled) return false;
   }
@@ -85,7 +100,7 @@ function isPassive(input: RunInput): boolean {
 }
 
 export function createRun(input: RunInput): Run | { error: string } {
-  const built = buildSpec(input.bodies, input.hinges, input.actuators, input.settings);
+  const built = buildSpec(input.bodies, input.hinges, input.actuators, input.settings, input.contactSpheres, input.contactPlanes);
   if (!built.ok) {
     return { error: built.problems[0]?.message ?? 'The model could not be assembled.' };
   }

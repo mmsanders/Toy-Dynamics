@@ -221,6 +221,38 @@ export type Actuator = {
 };
 
 // ---------------------------------------------------------------------------
+// Contact geometry
+// ---------------------------------------------------------------------------
+
+export type ContactMaterial = {
+  stiffness: number;
+  damping: number;
+};
+
+/** A sphere centred on a body node. Radius zero is an exact point contact. */
+export type ContactSphere = {
+  id: string;
+  name: string;
+  bodyId: string;
+  nodeId: string;
+  radius: number;
+  material: ContactMaterial;
+  enabled: boolean;
+};
+
+/** A fixed, one-sided plane in world coordinates. The normal points to the allowed side. */
+export type ContactPlane = {
+  id: string;
+  name: string;
+  point: Vec3;
+  normal: Vec3;
+  /** Width of the square scene patch. Contact remains an infinite analytical plane. */
+  size: number;
+  material: ContactMaterial;
+  enabled: boolean;
+};
+
+// ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
 
