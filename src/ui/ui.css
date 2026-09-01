@@ -182,8 +182,11 @@
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-dim);
-  font-size: 14px;
+  /* Six tabs share a 396px sidebar; 13px is the largest size at which "Actuators" still
+     fits its share without colliding with its neighbour. */
+  font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;
   transition: background 140ms ease, color 140ms ease;
 }
 
@@ -887,12 +890,13 @@
    --------------------------------------------------------------------------- */
 
 @media (max-width: 600px) {
-  /* Keep one extensible row instead of squeezing or wrapping tab labels. A partially
-     visible next tab makes the horizontal scroll discoverable on touch screens. */
+  /* Six tabs on a phone. Each tab is sized to its label and then grows to share whatever
+     is left, so on a 390px screen all six fit in one row and Run is never hidden. Only on
+     a genuinely narrow screen does the row overflow, and then it scrolls with the last tab
+     partly visible rather than clipping. */
   .tabs {
     overflow-x: auto;
     overscroll-behavior-x: contain;
-    scroll-snap-type: x proximity;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
   }
@@ -902,11 +906,10 @@
   }
 
   .tabs__tab {
-    flex: 0 0 auto;
-    min-width: 84px;
-    padding: 0 10px;
-    font-size: 13px;
-    scroll-snap-align: start;
+    flex: 1 0 auto;
+    min-width: 0;
+    padding: 0 6px;
+    font-size: 12px;
   }
 
   .framerow__meta {

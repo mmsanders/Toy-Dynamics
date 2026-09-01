@@ -169,6 +169,77 @@ describe('analytical compliant contact', () => {
     expect(qdd[0]! + qdd[1]!).toBeCloseTo(0, 12);
   });
 
+  // A finite-radius sphere is where friction stops being a block on a plane: the force acts
+  // at the surface, a radius from the centre, and that lever arm is what makes a ball roll.
+  // Both checks below have textbook answers that depend on the moment being there.
+  const RADIUS = 0.1, MASS = 1, STIFFNESS = 1e4, GRAVITY = 9.81;
+  const SOLID_SPHERE = 0.4 * MASS * RADIUS * RADIUS;
+  const rollingMaterial: ContactMaterialSpec = { stiffness: STIFFNESS, damping: 50, friction: 0.5, frictionVelocity: 0.01 };
+  const ballOnFloor = (rates: number[]): ModelSpec => ({
+    bodies: [bodySpec({ mass: MASS, inertia: { ixx: SOLID_SPHERE, iyy: SOLID_SPHERE, izz: SOLID_SPHERE, ixy: 0, ixz: 0, iyz: 0 } })],
+    hinges: [hingeSpec({
+      free: [...MASK.free],
+      // Resting at the static equilibrium penetration, so nothing bounces.
+      values: [0, 0, RADIUS - MASS * GRAVITY / STIFFNESS, 0, 0, 0],
+      rates,
+    })],
+    contactSpheres: [{ name: 'Ball', body: 0, point: [0, 0, 0], radius: RADIUS, material: rollingMaterial }],
+    contactPlanes: [{ name: 'Floor', point: [0, 0, 0], normal: [0, 0, 1], material: rollingMaterial }],
+    gravity: [0, 0, -GRAVITY],
+  });
+  const settle = (spec: ModelSpec, seconds: number) => {
+    const model = buildModel(spec);
+    const dynamics = makeDynamics(model);
+    const state = { q: Float64Array.from(model.q0), v: Float64Array.from(model.v0) };
+    const scratch = makeStepScratch(model);
+    const dt = 1e-4;
+    for (let i = 0; i < seconds / dt; i++) expect(step(dynamics, state, i * dt, dt, 'rk4', scratch)).toBe(true);
+    return state.v;
+  };
+
+  it('lets a sliding solid sphere spin up and roll at 5/7 of its launch speed', () => {
+    // Momentum about the contact point is conserved while it slips: m·v₀·r = (m r² + I)·ω,
+    // so a solid sphere rolls away at v = v₀ / (1 + 2/5) = 5/7 v₀ with ω = v / r.
+    const v = settle(ballOnFloor([1, 0, 0, 0, 0, 0]), 0.5);
+    expect(v[0]).toBeCloseTo(5 / 7, 3);
+    expect(v[4]! * RADIUS).toBeCloseTo(v[0]!, 3);
+  });
+
+  it('lets a spinning sphere dropped on a floor pull itself into motion', () => {
+    // The mirror image: spin-only launches translation at v = ω₀ r / (1 + 5/2) = 2/7 ω₀ r.
+    const omega = 10;
+    const v = settle(ballOnFloor([0, 0, 0, 0, omega, 0]), 0.5);
+    expect(v[0]).toBeCloseTo((2 / 7) * omega * RADIUS, 3);
+    expect(v[4]! * RADIUS).toBeCloseTo(v[0]!, 3);
+  });
+
+  it('applies sphere-sphere friction at the surface, with the spin it implies', () => {
+    const frictionMaterial: ContactMaterialSpec = { stiffness: 100, damping: 0, friction: 0.5, frictionVelocity: 0.01 };
+    const spec: ModelSpec = {
+      bodies: [bodySpec(), bodySpec()],
+      hinges: [
+        hingeSpec({ name: 'A', child: 0, free: [...MASK.free], values: [-0.4, 0, 0, 0, 0, 0], rates: [0, 0, 0, 0, 0, 1] }),
+        hingeSpec({ name: 'B', child: 1, free: [...MASK.free], values: [0.4, 0, 0, 0, 0, 0] }),
+      ],
+      contactSpheres: [
+        { name: 'A', body: 0, point: [0, 0, 0], radius: 0.5, material: frictionMaterial },
+        { name: 'B', body: 1, point: [0, 0, 0], radius: 0.5, material: frictionMaterial },
+      ],
+      gravity: [0, 0, 0],
+    };
+    // A spins about z, so its surface point at the contact moves +y at ω r = 0.5. The
+    // normal load is k·δ = 100·0.2 = 20 and the slip is far past the regularization scale,
+    // so friction is the full μN = 10: B is dragged along +y, A pushed back, and each feels
+    // the moment r × f = −5 about z.
+    const qdd = acceleration(spec);
+    expect(qdd[1]).toBeCloseTo(-10, 9);
+    expect(qdd[7]).toBeCloseTo(10, 9);
+    expect(qdd[5]).toBeCloseTo(-5, 9);
+    expect(qdd[11]).toBeCloseTo(-5, 9);
+    expect(qdd[0]).toBeCloseTo(-20, 9);
+    expect(qdd[6]).toBeCloseTo(20, 9);
+  });
+
   it('freezes contact activation across Runge-Kutta stages', () => {
     const spec: ModelSpec = {
       bodies: [bodySpec()],

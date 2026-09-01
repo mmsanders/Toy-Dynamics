@@ -92,9 +92,12 @@ export type Dynamics = {
   /** Right-hand side, held across the breakaway passes so no pass allocates. */
   rhsBuffer: Float64Array;
 
-  /** Cached sphere world positions/velocities for allocation-free contact evaluation. */
+  /** Cached sphere world centre positions, centre velocities and angular velocities. */
   spherePosition: V3[];
   sphereVelocity: V3[];
+  sphereAngularVelocity: V3[];
+  /** Scratch for a contact point expressed in link coordinates. */
+  scratchP: V3;
   /** Plane pairs first, then sphere pairs in stable nested-loop order. */
   activeContact: Uint8Array;
   contactSetInitialized: boolean;
@@ -130,6 +133,8 @@ export function makeDynamics(model: MultibodyModel): Dynamics {
     rhsBuffer: new Float64Array(nv),
     spherePosition: model.contactSpheres.map(() => v3()),
     sphereVelocity: model.contactSpheres.map(() => v3()),
+    sphereAngularVelocity: model.contactSpheres.map(() => v3()),
+    scratchP: v3(),
     activeContact: new Uint8Array(contactPairCount),
     contactSetInitialized: false,
   };
@@ -224,7 +229,36 @@ function updateContactPoints(d: Dynamics): void {
     velocity[0] = e[0]! * localX + e[3]! * localY + e[6]! * localZ;
     velocity[1] = e[1]! * localX + e[4]! * localY + e[7]! * localZ;
     velocity[2] = e[2]! * localX + e[5]! * localY + e[8]! * localZ;
+    const omega = d.sphereAngularVelocity[i]!;
+    omega[0] = e[0]! * wx + e[3]! * wy + e[6]! * wz;
+    omega[1] = e[1]! * wx + e[4]! * wy + e[7]! * wz;
+    omega[2] = e[2]! * wx + e[5]! * wy + e[8]! * wz;
   }
+}
+
+/**
+ * Apply a world force at a sphere's surface point, given as a world offset from its centre.
+ *
+ * The normal force acts along the line through the centre, so where it is applied makes no
+ * difference to it. Friction is different: it acts at the surface, a radius away from the
+ * centre, and that lever arm is what makes a ball roll rather than skid to a halt. Applying
+ * it at the centre would be the classic mistake of a sliding block that never spins.
+ */
+function addForceAtSphereSurface(
+  d: Dynamics,
+  sphere: { link: number; point: V3 },
+  ox: number,
+  oy: number,
+  oz: number,
+  worldForce: V3,
+): void {
+  const e = d.model.links[sphere.link]!.Xworld.E;
+  const p = d.scratchP;
+  // Xworld maps world → link, so a world offset lands in link coordinates through E.
+  p[0] = sphere.point[0]! + e[0]! * ox + e[1]! * oy + e[2]! * oz;
+  p[1] = sphere.point[1]! + e[3]! * ox + e[4]! * oy + e[5]! * oz;
+  p[2] = sphere.point[2]! + e[6]! * ox + e[7]! * oy + e[8]! * oz;
+  addForceAtPoint(d, sphere.link, p, worldForce);
 }
 
 /** Detect and apply compliant sphere-plane and sphere-sphere contact. */
@@ -248,13 +282,20 @@ function applyContacts(d: Dynamics, settle: boolean): void {
       const penetration = sphere.radius - distance;
       if (refresh) d.activeContact[pair] = penetration > 0 ? 1 : 0;
       if (d.activeContact[pair]) {
+        // The closing speed is the centre's along the normal; the spin adds nothing there.
         const normalSpeed = nx * velocity[0]! + ny * velocity[1]! + nz * velocity[2]!;
         const stiffness = Math.min(sphere.stiffness, plane.stiffness);
         const damping = Math.min(sphere.damping, plane.damping);
         const magnitude = Math.max(0, stiffness * Math.max(0, penetration) - damping * Math.min(0, normalSpeed));
-        const tx = velocity[0]! - nx * normalSpeed;
-        const ty = velocity[1]! - ny * normalSpeed;
-        const tz = velocity[2]! - nz * normalSpeed;
+        // Slip is measured at the surface point, a radius below the centre: v + ω × (−r n).
+        const ox = -sphere.radius * nx, oy = -sphere.radius * ny, oz = -sphere.radius * nz;
+        const w = d.sphereAngularVelocity[i]!;
+        const sx = velocity[0]! + (w[1]! * oz - w[2]! * oy);
+        const sy = velocity[1]! + (w[2]! * ox - w[0]! * oz);
+        const sz = velocity[2]! + (w[0]! * oy - w[1]! * ox);
+        const tx = sx - nx * normalSpeed;
+        const ty = sy - ny * normalSpeed;
+        const tz = sz - nz * normalSpeed;
         const slip = Math.hypot(tx, ty, tz);
         const friction = Math.min(sphere.friction, plane.friction);
         const frictionScale = slip > 0
@@ -263,7 +304,7 @@ function applyContacts(d: Dynamics, settle: boolean): void {
         force[0] = nx * magnitude + tx * frictionScale;
         force[1] = ny * magnitude + ty * frictionScale;
         force[2] = nz * magnitude + tz * frictionScale;
-        addForceAtPoint(d, sphere.link, sphere.point, force);
+        addForceAtSphereSurface(d, sphere, ox, oy, oz, force);
       }
       pair++;
     }
@@ -289,7 +330,14 @@ function applyContacts(d: Dynamics, settle: boolean): void {
         const stiffness = Math.min(a.stiffness, b.stiffness);
         const damping = Math.min(a.damping, b.damping);
         const magnitude = Math.max(0, stiffness * Math.max(0, penetration) - damping * Math.min(0, normalSpeed));
-        const rvx = vb[0]! - va[0]!, rvy = vb[1]! - va[1]!, rvz = vb[2]! - va[2]!;
+        // Surface points: A's lies a radius along the normal, B's a radius back along it.
+        // The relative slip between those two points is what friction acts on.
+        const ax = a.radius * nx, ay = a.radius * ny, az = a.radius * nz;
+        const bx = -b.radius * nx, by = -b.radius * ny, bz = -b.radius * nz;
+        const wa = d.sphereAngularVelocity[i]!, wb = d.sphereAngularVelocity[j]!;
+        const rvx = (vb[0]! + wb[1]! * bz - wb[2]! * by) - (va[0]! + wa[1]! * az - wa[2]! * ay);
+        const rvy = (vb[1]! + wb[2]! * bx - wb[0]! * bz) - (va[1]! + wa[2]! * ax - wa[0]! * az);
+        const rvz = (vb[2]! + wb[0]! * by - wb[1]! * bx) - (va[2]! + wa[0]! * ay - wa[1]! * ax);
         const tx = rvx - nx * normalSpeed, ty = rvy - ny * normalSpeed, tz = rvz - nz * normalSpeed;
         const slip = Math.hypot(tx, ty, tz);
         const friction = Math.min(a.friction, b.friction);
@@ -299,9 +347,9 @@ function applyContacts(d: Dynamics, settle: boolean): void {
         force[0] = -nx * magnitude + tx * frictionScale;
         force[1] = -ny * magnitude + ty * frictionScale;
         force[2] = -nz * magnitude + tz * frictionScale;
-        addForceAtPoint(d, a.link, a.point, force);
+        addForceAtSphereSurface(d, a, ax, ay, az, force);
         force[0] = -force[0]!; force[1] = -force[1]!; force[2] = -force[2]!;
-        addForceAtPoint(d, b.link, b.point, force);
+        addForceAtSphereSurface(d, b, bx, by, bz, force);
       }
       pair++;
     }
