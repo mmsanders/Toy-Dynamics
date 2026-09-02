@@ -16,13 +16,16 @@ This is deliberately a back-of-the-envelope tool. It trades fidelity for speed a
 *legible* — you should be able to see exactly what it did and why. That only works if you can
 also see when it has stopped being trustworthy, so a large part of it is devoted to saying so.
 
-Contact is deliberately simple: body-fixed **spheres** against fixed **world planes** and
-against each other, with a compliant (penalty) normal force and regularized sliding friction.
+Contact is deliberately simple: body-fixed **spheres** against fixed **world planes**, regular
+**heightfields**, and each other, with a compliant (penalty) normal force and regularized
+sliding friction. Heightfields are small pasted or procedurally generated Z-up grids with
+bilinear height/normal sampling; their edges and no-data cells are genuinely empty.
 A plane is either unbounded or a **finite plate** whose edges are real — a ball can roll along
 one, tip over the rim and fall off — and the square drawn in the scene is exactly the square
 that stops it. An arrow marks which side is solid. Bodies have no other shape, so anything
-that is not a sphere passes through everything. There is no rigid non-penetration, no static
-sticking and no swept collision detection; the
+that is not a sphere passes through everything. Heightfield contact samples below the sphere
+centre, so radii should stay near or below the grid spacing. There is no rigid
+non-penetration, no static sticking and no swept collision detection; the
 [contact development plan](docs/contact-feasibility.md) spells out what was chosen and why.
 
 ## The model

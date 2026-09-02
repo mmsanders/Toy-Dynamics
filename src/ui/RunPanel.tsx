@@ -77,6 +77,7 @@ export function RunPanel({
   const springDampers = useModelStore((s) => s.springDampers);
   const contactSpheres = useModelStore((s) => s.contactSpheres);
   const contactPlanes = useModelStore((s) => s.contactPlanes);
+  const contactHeightfields = useModelStore((s) => s.contactHeightfields);
   const settings = useModelStore((s) => s.settings);
   const conventions = useModelStore((s) => s.conventions);
   const selectedBodyId = useModelStore((s) => s.selectedBodyId);
@@ -87,8 +88,8 @@ export function RunPanel({
   const [motionFrame, setMotionFrame] = useState<MotionFrame>('world');
 
   const solver = useMemo(
-    () => buildSolverModel(bodies, hinges, actuators, settings, springDampers, contactSpheres, contactPlanes),
-    [bodies, hinges, actuators, settings, contactSpheres, contactPlanes, springDampers],
+    () => buildSolverModel(bodies, hinges, actuators, settings, springDampers, contactSpheres, contactPlanes, contactHeightfields),
+    [bodies, hinges, actuators, settings, contactSpheres, contactPlanes, contactHeightfields, springDampers],
   );
 
   const frame = useMemo(() => {

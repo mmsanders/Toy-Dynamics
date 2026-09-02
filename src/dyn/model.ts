@@ -17,7 +17,17 @@ import {
   v3,
 } from './spatial';
 import { buildInertia, type InertiaInput } from './inertia';
-import { planeBasis } from './contact';
+import {
+  planeBasis,
+  queryHeightfieldSurface,
+  queryPlaneSurface,
+  MAX_HEIGHTFIELD_AXIS,
+  MAX_HEIGHTFIELD_SAMPLES,
+  type HeightfieldGeometry,
+  type PlaneGeometry,
+  type SurfaceQuery,
+  type SurfaceQueryResult,
+} from './contact';
 import {
   type JointModel,
   type JointWorkspace,
@@ -173,6 +183,17 @@ export type ContactPlaneSpec = {
   bounded?: boolean;
 };
 
+/** A fixed regular world-X/Y height grid. Values are row-major; null is no-data. */
+export type ContactHeightfieldSpec = {
+  name: string;
+  origin: readonly number[];
+  spacing: number;
+  columns: number;
+  rows: number;
+  heights: readonly (number | null)[];
+  material: ContactMaterialSpec;
+};
+
 export type ModelSpec = {
   bodies: BodySpec[];
   hinges: HingeSpec[];
@@ -180,6 +201,7 @@ export type ModelSpec = {
   springDampers?: SpringDamperSpec[];
   contactSpheres?: ContactSphereSpec[];
   contactPlanes?: ContactPlaneSpec[];
+  contactHeightfields?: ContactHeightfieldSpec[];
   gravity: readonly number[];
 };
 
@@ -229,23 +251,23 @@ export type CompiledContactSphere = {
   frictionVelocity: number;
 };
 
-export type CompiledContactPlane = {
+type CompiledContactSurfaceMaterial = SurfaceQuery & {
   name: string;
-  point: V3;
-  /** Unit world normal pointing into the allowed half-space. */
-  normal: V3;
-  /** In-plane axes, from `planeBasis`, that the plate is measured and drawn along. */
-  tangentU: V3;
-  tangentV: V3;
-  /** Half the plate's side length. Meaningless when `bounded` is false. */
-  halfSize: number;
-  /** False for an unbounded plane, which has no edges to fall off. */
-  bounded: boolean;
   stiffness: number;
   damping: number;
   friction: number;
   frictionVelocity: number;
 };
+
+export type CompiledContactPlane = PlaneGeometry & CompiledContactSurfaceMaterial & {
+  kind: 'plane';
+};
+
+export type CompiledContactHeightfield = HeightfieldGeometry & CompiledContactSurfaceMaterial & {
+  kind: 'heightfield';
+};
+
+export type CompiledContactSurface = CompiledContactPlane | CompiledContactHeightfield;
 
 /**
  * One entry per velocity coordinate, tying it back to its axis parameters.
@@ -303,6 +325,8 @@ export type MultibodyModel = {
   springDampers: CompiledSpringDamper[];
   contactSpheres: CompiledContactSphere[];
   contactPlanes: CompiledContactPlane[];
+  contactHeightfields: CompiledContactHeightfield[];
+  contactSurfaces: CompiledContactSurface[];
 };
 
 const DOF_SUFFIX = ['tx', 'ty', 'tz', 'rx', 'ry', 'rz'];
@@ -450,7 +474,7 @@ export function buildModel(spec: ModelSpec): MultibodyModel {
     actuators: compileActuators(spec, linkOfBody, spec.hinges),
     springDampers: compileSpringDampers(spec, linkOfBody, spec.hinges),
     contactSpheres: compileContactSpheres(spec, linkOfBody, spec.hinges),
-    contactPlanes: compileContactPlanes(spec),
+    ...compileContactSurfaces(spec),
   };
 }
 
@@ -490,8 +514,12 @@ function compileContactSpheres(
   return out;
 }
 
-function compileContactPlanes(spec: ModelSpec): CompiledContactPlane[] {
-  const out: CompiledContactPlane[] = [];
+function compileContactSurfaces(spec: ModelSpec): {
+  contactPlanes: CompiledContactPlane[];
+  contactHeightfields: CompiledContactHeightfield[];
+  contactSurfaces: CompiledContactSurface[];
+} {
+  const contactPlanes: CompiledContactPlane[] = [];
   for (const plane of spec.contactPlanes ?? []) {
     const nx = plane.normal[0] ?? 0;
     const ny = plane.normal[1] ?? 0;
@@ -503,7 +531,8 @@ function compileContactPlanes(spec: ModelSpec): CompiledContactPlane[] {
     const tangentV = v3();
     planeBasis(normal, tangentU, tangentV);
     const size = Math.max(0, plane.size ?? 0);
-    out.push({
+    const compiled: CompiledContactPlane = {
+      kind: 'plane',
       name: plane.name,
       point: v3(plane.point[0] ?? 0, plane.point[1] ?? 0, plane.point[2] ?? 0),
       normal,
@@ -517,9 +546,50 @@ function compileContactPlanes(spec: ModelSpec): CompiledContactPlane[] {
       damping: Math.max(0, plane.material.damping),
       friction: Math.max(0, plane.material.friction ?? 0),
       frictionVelocity: Math.max(Number.EPSILON, plane.material.frictionVelocity ?? 0.01),
-    });
+      querySphere(cx, cy, cz, radius, result) {
+        return queryPlaneSurface(this, cx, cy, cz, radius, result);
+      },
+    };
+    contactPlanes.push(compiled);
   }
-  return out;
+
+  const contactHeightfields: CompiledContactHeightfield[] = [];
+  for (const field of spec.contactHeightfields ?? []) {
+    const columns = Math.max(0, Math.trunc(field.columns));
+    const rows = Math.max(0, Math.trunc(field.rows));
+    if (columns < 2 || rows < 2 || columns > MAX_HEIGHTFIELD_AXIS || rows > MAX_HEIGHTFIELD_AXIS
+        || columns * rows > MAX_HEIGHTFIELD_SAMPLES
+        || !(field.spacing > 0) || !Number.isFinite(field.spacing)) continue;
+    const count = columns * rows;
+    const heights = new Float64Array(count);
+    for (let i = 0; i < count; i++) {
+      const value = field.heights[i];
+      heights[i] = typeof value === 'number' && Number.isFinite(value) ? value : Number.NaN;
+    }
+    const sample = { height: 0, dx: 0, dy: 0 };
+    const compiled: CompiledContactHeightfield = {
+      kind: 'heightfield',
+      name: field.name,
+      origin: v3(field.origin[0] ?? 0, field.origin[1] ?? 0, field.origin[2] ?? 0),
+      spacing: field.spacing,
+      columns,
+      rows,
+      heights,
+      stiffness: Math.max(0, field.material.stiffness),
+      damping: Math.max(0, field.material.damping),
+      friction: Math.max(0, field.material.friction ?? 0),
+      frictionVelocity: Math.max(Number.EPSILON, field.material.frictionVelocity ?? 0.01),
+      querySphere(cx, cy, cz, radius, result: SurfaceQueryResult) {
+        return queryHeightfieldSurface(this, cx, cy, cz, radius, result, sample);
+      },
+    };
+    contactHeightfields.push(compiled);
+  }
+  return {
+    contactPlanes,
+    contactHeightfields,
+    contactSurfaces: [...contactPlanes, ...contactHeightfields],
+  };
 }
 
 /**

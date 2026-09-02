@@ -62,6 +62,8 @@ function snapshotCurrent(): ModelPersisted {
     contactSphereOrder: store.contactSphereOrder,
     contactPlanes: store.contactPlanes,
     contactPlaneOrder: store.contactPlaneOrder,
+    contactHeightfields: store.contactHeightfields,
+    contactHeightfieldOrder: store.contactHeightfieldOrder,
     settings: store.settings,
     conventions: store.conventions,
     selectedBodyId: store.selectedBodyId,

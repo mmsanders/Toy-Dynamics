@@ -8,6 +8,7 @@ import {
   type Body,
   type Conventions,
   type ContactMaterial,
+  type ContactHeightfield,
   type ContactPlane,
   type ContactSphere,
   type DofSpec,
@@ -40,6 +41,7 @@ import { gravityOnSystemChange } from '../units';
 import type { DiagnosticFix } from '../model/diagnostics';
 import { repairModel, type ModelPersisted } from './modelRepair';
 import { v3 } from '../dyn/spatial';
+import { MAX_HEIGHTFIELD_AXIS, MAX_HEIGHTFIELD_SAMPLES } from '../dyn/contact';
 
 /**
  * The edited model.
@@ -115,6 +117,10 @@ export type ModelState = ModelSlice & {
   removeContactPlane: (id: string) => void;
   setContactPlane: (id: string, patch: Partial<ContactPlane>) => void;
   setContactMaterial: (kind: 'sphere' | 'plane', id: string, patch: Partial<ContactMaterial>) => void;
+  addContactHeightfield: () => string;
+  removeContactHeightfield: (id: string) => void;
+  setContactHeightfield: (id: string, patch: Partial<ContactHeightfield>) => void;
+  setContactHeightfieldMaterial: (id: string, patch: Partial<ContactMaterial>) => void;
 
   setSettings: (patch: Partial<SimSettings>) => void;
   setUnits: (units: UnitSystem) => void;
@@ -210,6 +216,8 @@ export function modelSnapshot(state: ModelState): ModelPersisted {
     contactSphereOrder: state.contactSphereOrder,
     contactPlanes: state.contactPlanes,
     contactPlaneOrder: state.contactPlaneOrder,
+    contactHeightfields: state.contactHeightfields,
+    contactHeightfieldOrder: state.contactHeightfieldOrder,
     settings: state.settings,
     conventions: state.conventions,
     selectedBodyId: state.selectedBodyId,
@@ -915,6 +923,87 @@ export const useModelStore = create<ModelState>()(
           const plane = state.contactPlanes[id];
           return plane
             ? { contactPlanes: { ...state.contactPlanes, [id]: { ...plane, material: { ...plane.material, ...patch } } } }
+            : state;
+        }),
+
+      addContactHeightfield: () => {
+        const id = nextId('contact-heightfield');
+        set((state) => {
+          const columns = 9;
+          const rows = 9;
+          const field: ContactHeightfield = {
+            id,
+            name: uniqueName(Object.values(state.contactHeightfields), `Heightfield ${state.contactHeightfieldOrder.length + 1}`),
+            origin: [-2, -2, -2],
+            spacing: 0.5,
+            columns,
+            rows,
+            heights: Array(columns * rows).fill(0),
+            material: { stiffness: 10000, damping: 100, friction: 0, frictionVelocity: 0.01 },
+            enabled: true,
+          };
+          return {
+            contactHeightfields: { ...state.contactHeightfields, [id]: field },
+            contactHeightfieldOrder: [...state.contactHeightfieldOrder, id],
+          };
+        });
+        return id;
+      },
+
+      removeContactHeightfield: (id) =>
+        set((state) => {
+          if (!state.contactHeightfields[id]) return state;
+          const contactHeightfields = { ...state.contactHeightfields };
+          delete contactHeightfields[id];
+          return {
+            contactHeightfields,
+            contactHeightfieldOrder: state.contactHeightfieldOrder.filter((entry) => entry !== id),
+          };
+        }),
+
+      setContactHeightfield: (id, patch) =>
+        set((state) => {
+          const field = state.contactHeightfields[id];
+          if (!field) return state;
+          const requestedColumns = patch.columns ?? field.columns;
+          const requestedRows = patch.rows ?? field.rows;
+          const requestedSpacing = patch.spacing ?? field.spacing;
+          const columns = Math.min(
+            MAX_HEIGHTFIELD_AXIS,
+            Math.max(2, Math.trunc(Number.isFinite(requestedColumns) ? requestedColumns : field.columns)),
+          );
+          const rows = Math.min(
+            MAX_HEIGHTFIELD_AXIS,
+            Math.max(2, Math.min(
+              Math.trunc(Number.isFinite(requestedRows) ? requestedRows : field.rows),
+              Math.floor(MAX_HEIGHTFIELD_SAMPLES / columns),
+            )),
+          );
+          const source = patch.heights ?? field.heights;
+          const heights = Array.from({ length: columns * rows }, (_, index) => {
+            const value = source[index];
+            return typeof value === 'number' && Number.isFinite(value) ? value : null;
+          });
+          return {
+            contactHeightfields: {
+              ...state.contactHeightfields,
+              [id]: {
+                ...field,
+                ...patch,
+                columns,
+                rows,
+                spacing: Number.isFinite(requestedSpacing) && requestedSpacing > 0 ? requestedSpacing : field.spacing,
+                heights,
+              },
+            },
+          };
+        }),
+
+      setContactHeightfieldMaterial: (id, patch) =>
+        set((state) => {
+          const field = state.contactHeightfields[id];
+          return field
+            ? { contactHeightfields: { ...state.contactHeightfields, [id]: { ...field, material: { ...field.material, ...patch } } } }
             : state;
         }),
 

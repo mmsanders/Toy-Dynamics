@@ -83,6 +83,8 @@ type EncodedModel = {
   cs?: [string, number, number, number, number, number, 0 | 1, number?, number?][];
   /** `[name, point, normal, stiffness, damping, enabled, size?, friction?, frictionVelocity?, bounded?]`. */
   cp?: [string, number[], number[], number, number, 0 | 1, number?, number?, number?, (0 | 1)?][];
+  /** `[name, origin, spacing, columns, rows, heights, stiffness, damping, friction, frictionVelocity, enabled]`. */
+  ch?: [string, number[], number, number, number, (number | null)[], number, number, number, number, 0 | 1][];
   /** `[units, gx, gy, gz, dt, duration, integrator, sampleRate]`. */
   s: [string, number, number, number, number, number, string, number];
   /** `[upAxis, eulerOrder, rotationMode, angleUnit]`. */
@@ -226,6 +228,23 @@ export function encodeModel(model: ModelPersisted): string {
         round(plane.material.stiffness), round(plane.material.damping), plane.enabled ? 1 : 0,
         round(plane.size), round(plane.material.friction), round(plane.material.frictionVelocity),
         plane.bounded ? 1 : 0]];
+    }),
+    ch: model.contactHeightfieldOrder.flatMap((id) => {
+      const field = model.contactHeightfields[id];
+      if (!field) return [];
+      return [[
+        field.name,
+        roundAll(field.origin),
+        round(field.spacing),
+        field.columns,
+        field.rows,
+        field.heights.map((height) => height === null ? null : round(height)),
+        round(field.material.stiffness),
+        round(field.material.damping),
+        round(field.material.friction),
+        round(field.material.frictionVelocity),
+        field.enabled ? 1 : 0,
+      ]];
     }),
     s: [
       model.settings.units,
@@ -441,6 +460,27 @@ export function decodeModel(encoded: string): ModelPersisted | null {
       bounded: plane?.[9] === 1,
     };
   });
+  const contactHeightfields: Record<string, unknown> = {};
+  const contactHeightfieldOrder: string[] = [];
+  (Array.isArray(payload.ch) ? payload.ch : []).forEach((field, i) => {
+    const id = `ch${i}`;
+    contactHeightfieldOrder.push(id);
+    contactHeightfields[id] = {
+      name: field?.[0],
+      origin: field?.[1],
+      spacing: field?.[2],
+      columns: field?.[3],
+      rows: field?.[4],
+      heights: field?.[5],
+      material: {
+        stiffness: field?.[6],
+        damping: field?.[7],
+        friction: field?.[8],
+        frictionVelocity: field?.[9],
+      },
+      enabled: field?.[10] !== 0,
+    };
+  });
 
   const s = Array.isArray(payload.s) ? payload.s : [];
   const c = Array.isArray(payload.c) ? payload.c : [];
@@ -458,6 +498,8 @@ export function decodeModel(encoded: string): ModelPersisted | null {
     contactSphereOrder,
     contactPlanes,
     contactPlaneOrder,
+    contactHeightfields,
+    contactHeightfieldOrder,
     settings: {
       units: s[0],
       gravity: [s[1], s[2], s[3]],

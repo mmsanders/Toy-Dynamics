@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import * as THREE from 'three';
-import type { Body, ContactPlane, ContactSphere } from '../types';
+import type { Body, ContactHeightfield, ContactPlane, ContactSphere } from '../types';
 import { nodeWorldPosition, type BodyPose } from '../sim/kinematics';
 import { planeBasis } from '../dyn/contact';
 import { v3 } from '../dyn/spatial';
@@ -66,3 +66,47 @@ export function ContactPlaneView({ plane, scale }: { plane: ContactPlane; scale:
 
 /** The group is already turned so its +Z is the plane normal. */
 const NORMAL_AXIS = new THREE.Vector3(0, 0, 1);
+
+/** Fixed regular height grid. Cells touching no-data samples are omitted entirely. */
+export function ContactHeightfieldView({ field }: { field: ContactHeightfield }) {
+  const geometry = useMemo(() => {
+    const positions = new Float32Array(field.columns * field.rows * 3);
+    for (let row = 0; row < field.rows; row++) {
+      for (let column = 0; column < field.columns; column++) {
+        const sample = row * field.columns + column;
+        const at = sample * 3;
+        positions[at] = column * field.spacing;
+        positions[at + 1] = row * field.spacing;
+        positions[at + 2] = field.heights[sample] ?? 0;
+      }
+    }
+    const indices: number[] = [];
+    for (let row = 0; row < field.rows - 1; row++) {
+      for (let column = 0; column < field.columns - 1; column++) {
+        const a = row * field.columns + column;
+        const b = a + 1;
+        const c = a + field.columns;
+        const d = c + 1;
+        if ([a, b, c, d].some((index) => field.heights[index] === null)) continue;
+        indices.push(a, b, d, a, d, c);
+      }
+    }
+    const result = new THREE.BufferGeometry();
+    result.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    result.setIndex(indices);
+    result.computeVertexNormals();
+    return result;
+  }, [field.columns, field.rows, field.spacing, field.heights]);
+  const edges = useMemo(() => new THREE.EdgesGeometry(geometry, 12), [geometry]);
+
+  return (
+    <group position={field.origin} visible={field.enabled}>
+      <mesh geometry={geometry}>
+        <meshStandardMaterial color={CONTACT_COLOR} transparent opacity={0.2} side={THREE.DoubleSide} depthWrite={false} />
+      </mesh>
+      <lineSegments geometry={edges}>
+        <lineBasicMaterial color={CONTACT_COLOR} transparent opacity={0.55} />
+      </lineSegments>
+    </group>
+  );
+}

@@ -28,6 +28,8 @@ const snapshot = (): ModelPersisted => {
     contactSphereOrder: model.contactSphereOrder,
     contactPlanes: model.contactPlanes,
     contactPlaneOrder: model.contactPlaneOrder,
+    contactHeightfields: model.contactHeightfields,
+    contactHeightfieldOrder: model.contactHeightfieldOrder,
     settings: model.settings,
     conventions: model.conventions,
     selectedBodyId: model.selectedBodyId,
@@ -77,6 +79,25 @@ describe('share links', () => {
     expect(plane.size).toBe(7.5);
     expect(plane.bounded).toBe(true);
     expect(plane.material).toEqual({ stiffness: 3000, damping: 40, friction: 0.6, frictionVelocity: 0.03 });
+  });
+
+  it('round-trips a compact heightfield including no-data cells', () => {
+    const original = snapshot();
+    original.contactHeightfields.terrain = {
+      id: 'terrain', name: 'Terrain', origin: [-1, -2, 0.5], spacing: 0.25,
+      columns: 3, rows: 2, heights: [0, 0.1, null, 0.2, 0.3, 0.4],
+      material: { stiffness: 5000, damping: 60, friction: 0.35, frictionVelocity: 0.02 },
+      enabled: true,
+    };
+    original.contactHeightfieldOrder.push('terrain');
+
+    const decoded = decodeModel(encodeModel(original))!;
+    const field = decoded.contactHeightfields[decoded.contactHeightfieldOrder[0]!]!;
+    expect(field).toMatchObject({
+      name: 'Terrain', origin: [-1, -2, 0.5], spacing: 0.25, columns: 3, rows: 2,
+      heights: [0, 0.1, null, 0.2, 0.3, 0.4], enabled: true,
+    });
+    expect(field.material).toEqual({ stiffness: 5000, damping: 60, friction: 0.35, frictionVelocity: 0.02 });
   });
 
   it('round-trips two-node spring-damper devices', () => {

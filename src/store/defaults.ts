@@ -5,6 +5,7 @@ import {
   type Conventions,
   type ContactPlane,
   type ContactSphere,
+  type ContactHeightfield,
   type DofSpec,
   type Hinge,
   type Node,
@@ -103,6 +104,8 @@ export type ModelSlice = {
   contactSphereOrder: string[];
   contactPlanes: Record<string, ContactPlane>;
   contactPlaneOrder: string[];
+  contactHeightfields: Record<string, ContactHeightfield>;
+  contactHeightfieldOrder: string[];
   settings: SimSettings;
   conventions: Conventions;
   selectedBodyId: string;
@@ -209,6 +212,8 @@ export function initialModel(): ModelSlice {
     contactSphereOrder: [],
     contactPlanes: {},
     contactPlaneOrder: [],
+    contactHeightfields: {},
+    contactHeightfieldOrder: [],
     settings: { ...DEFAULT_SETTINGS },
     conventions: { ...DEFAULT_CONVENTIONS },
     selectedBodyId: upper.id,

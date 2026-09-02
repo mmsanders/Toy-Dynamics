@@ -1,4 +1,4 @@
-import { GROUND_ID, type Actuator, type Body, type ContactPlane, type ContactSphere, type Hinge, type SimSettings, type SpringDamper, type UnitSystem, type Vec3 } from '../types';
+import { GROUND_ID, type Actuator, type Body, type ContactHeightfield, type ContactPlane, type ContactSphere, type Hinge, type SimSettings, type SpringDamper, type UnitSystem, type Vec3 } from '../types';
 import { buildModel, pointToWorld } from '../dyn/model';
 import { makeDynamics } from '../dyn/forward';
 import { crba, factorize } from '../dyn/crba';
@@ -8,7 +8,7 @@ import { makeJointModel, rotationalAxisSeparation } from '../dyn/joints';
 import { buildSpec } from './adapter';
 import { DOF_LABELS } from '../types';
 import { m3, v3 } from '../dyn/spatial';
-import { spherePlanePenetration } from '../dyn/contact';
+import { MAX_HEIGHTFIELD_SAMPLES } from '../dyn/contact';
 import {
   STANDARD_GRAVITY_IMPERIAL,
   STANDARD_GRAVITY_SI,
@@ -91,6 +91,7 @@ export function runDiagnostics(
   contactSpheres: Record<string, ContactSphere> = {},
   contactPlanes: Record<string, ContactPlane> = {},
   springDampers: Record<string, SpringDamper> = {},
+  contactHeightfields: Record<string, ContactHeightfield> = {},
 ): Diagnostic[] {
   const out: Diagnostic[] = [];
   const system = UNIT_SYSTEMS[settings.units];
@@ -98,7 +99,7 @@ export function runDiagnostics(
   const lengthUnit = unitLabel(settings.units, 'length');
   const inertiaUnit = unitLabel(settings.units, 'inertia');
 
-  const built = buildSpec(bodies, hinges, actuators, settings, contactSpheres, contactPlanes, springDampers);
+  const built = buildSpec(bodies, hinges, actuators, settings, contactSpheres, contactPlanes, springDampers, contactHeightfields);
 
   // Contact data is deliberately editable even when implausible; diagnose it before the
   // compiler clamps invalid values or drops a plane with no usable normal.
@@ -136,6 +137,37 @@ export function runDiagnostics(
         title: `${plane.name} has a negative contact property`,
         detail: 'Stiffness, damping, and friction must be non-negative; friction velocity must be positive. The solver clamps invalid values.',
       });
+    }
+  }
+  for (const field of Object.values(contactHeightfields)) {
+    const sampleCount = Math.trunc(field.columns) * Math.trunc(field.rows);
+    if (!(field.spacing > 0) || field.columns < 2 || field.rows < 2
+        || sampleCount > MAX_HEIGHTFIELD_SAMPLES || field.heights.length !== sampleCount) {
+      out.push({
+        id: `contact-heightfield-grid:${field.id}`,
+        severity: 'warning',
+        title: `${field.name} has an invalid grid`,
+        detail: `Heightfields need at least 2 × 2 samples, positive spacing, matching row-major data, and at most ${MAX_HEIGHTFIELD_SAMPLES} samples. Invalid grids are ignored or repaired.`,
+      });
+    }
+    if (field.material.stiffness < 0 || field.material.damping < 0 || field.material.friction < 0 || field.material.frictionVelocity <= 0) {
+      out.push({
+        id: `contact-material:heightfield:${field.id}`,
+        severity: 'warning',
+        title: `${field.name} has a negative contact property`,
+        detail: 'Stiffness, damping, and friction must be non-negative; friction velocity must be positive. The solver clamps invalid values.',
+      });
+    }
+    if (field.enabled && field.spacing > 0) {
+      for (const sphere of Object.values(contactSpheres)) {
+        if (!sphere.enabled || sphere.radius <= field.spacing) continue;
+        out.push({
+          id: `contact-heightfield-radius:${sphere.id}:${field.id}`,
+          severity: 'info',
+          title: `${sphere.name} is large relative to ${field.name}`,
+          detail: `The basic heightfield query samples the terrain beneath the sphere centre. A radius at or below the ${formatNumber(field.spacing)} ${lengthUnit} grid spacing gives the most faithful result; larger spheres may bridge ridges or holes inaccurately.`,
+        });
+      }
     }
   }
   for (const device of Object.values(springDampers)) {
@@ -390,8 +422,6 @@ export function runDiagnostics(
       const spherePositions = model.contactSpheres.map((sphere) =>
         pointToWorld(model.links[sphere.link]!, sphere.point, v3(), m3()),
       );
-      const contactNormal = v3();
-
       // Discrete contact only samples geometry at step boundaries. Warn when an initially
       // moving finite-radius sphere can travel a substantial fraction of its radius in one
       // step; exact point contacts have no meaningful length scale for this heuristic.
@@ -399,7 +429,7 @@ export function runDiagnostics(
       let worstTravelLabel = '';
       let worstTravelSpeed = 0;
       let worstTravelRadius = 0;
-      const hasPossibleContact = model.contactPlanes.length > 0 || model.contactSpheres.length > 1;
+      const hasPossibleContact = model.contactSurfaces.length > 0 || model.contactSpheres.length > 1;
       for (const sphere of hasPossibleContact ? model.contactSpheres : []) {
         if (!(sphere.radius > 0)) continue;
         const link = model.links[sphere.link]!;
@@ -434,17 +464,16 @@ export function runDiagnostics(
       for (let i = 0; i < model.contactSpheres.length; i++) {
         const sphere = model.contactSpheres[i]!;
         const position = spherePositions[i]!;
-        for (const plane of model.contactPlanes) {
-          // The solver's own geometry, so a bounded plate the sphere is nowhere near does
-          // not get reported as an overlap.
-          const penetration = spherePlanePenetration(
-            plane, position[0]!, position[1]!, position[2]!, sphere.radius, contactNormal,
+        for (const surface of model.contactSurfaces) {
+          const found = surface.querySphere(
+            position[0]!, position[1]!, position[2]!, sphere.radius, dynamics.surfaceQuery,
           );
+          const penetration = found ? -dynamics.surfaceQuery.separation : 0;
           if (penetration > 0) {
             out.push({
-              id: `contact-overlap:plane:${i}:${plane.name}`,
+              id: `contact-overlap:${surface.kind}:${i}:${surface.name}`,
               severity: 'warning',
-              title: `${sphere.name} starts inside ${plane.name}`,
+              title: `${sphere.name} starts inside ${surface.name}`,
               detail: `Initial penetration is ${formatNumber(penetration)} ${lengthUnit}, so the contact spring is already loaded at t = 0.`,
             });
           }
@@ -536,9 +565,9 @@ export function runDiagnostics(
       let contactLabel = '';
       for (const sphere of model.contactSpheres) {
         const mass = Math.max(model.links[sphere.link]!.mass, 1e-30);
-        for (const plane of model.contactPlanes) {
-          const omega = Math.sqrt(Math.min(sphere.stiffness, plane.stiffness) / mass);
-          if (omega > contactOmega) { contactOmega = omega; contactLabel = `${sphere.name} against ${plane.name}`; }
+        for (const surface of model.contactSurfaces) {
+          const omega = Math.sqrt(Math.min(sphere.stiffness, surface.stiffness) / mass);
+          if (omega > contactOmega) { contactOmega = omega; contactLabel = `${sphere.name} against ${surface.name}`; }
         }
       }
       if (contactOmega * settings.dt > STIFFNESS_STEP_LIMIT) {

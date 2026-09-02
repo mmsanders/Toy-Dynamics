@@ -14,7 +14,7 @@ import { BodyView } from './BodyView';
 import { HingeView } from './HingeView';
 import { ActuatorView } from './ActuatorView';
 import { SpringDamperView } from './SpringDamperView';
-import { ContactPlaneView, ContactSphereView } from './ContactView';
+import { ContactHeightfieldView, ContactPlaneView, ContactSphereView } from './ContactView';
 
 /**
  * The 3D view.
@@ -134,6 +134,7 @@ export function SceneCanvas({ trajectory, frameIndex }: Props) {
   const springDampers = useModelStore((s) => s.springDampers);
   const contactSpheres = useModelStore((s) => s.contactSpheres);
   const contactPlanes = useModelStore((s) => s.contactPlanes);
+  const contactHeightfields = useModelStore((s) => s.contactHeightfields);
   const settings = useModelStore((s) => s.settings);
   const upAxis = useModelStore((s) => s.conventions.upAxis);
   const selectedBodyId = useModelStore((s) => s.selectedBodyId);
@@ -309,6 +310,10 @@ export function SceneCanvas({ trajectory, frameIndex }: Props) {
 
         {Object.values(contactPlanes).map((plane) => (
           <ContactPlaneView key={plane.id} plane={plane} scale={scale} />
+        ))}
+
+        {Object.values(contactHeightfields).map((field) => (
+          <ContactHeightfieldView key={field.id} field={field} />
         ))}
       </group>
 

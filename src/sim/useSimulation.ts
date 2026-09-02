@@ -49,6 +49,7 @@ function runInput(state: ReturnType<typeof useModelStore.getState>) {
     springDampers: state.springDampers,
     contactSpheres: state.contactSpheres,
     contactPlanes: state.contactPlanes,
+    contactHeightfields: state.contactHeightfields,
     settings: state.settings,
   };
 }
@@ -60,6 +61,7 @@ export function useSimulation(): SimulationState {
   const springDampers = useModelStore((s) => s.springDampers);
   const contactSpheres = useModelStore((s) => s.contactSpheres);
   const contactPlanes = useModelStore((s) => s.contactPlanes);
+  const contactHeightfields = useModelStore((s) => s.contactHeightfields);
   const settings = useModelStore((s) => s.settings);
 
   const [state, setState] = useState<SimulationState>({
@@ -153,7 +155,7 @@ export function useSimulation(): SimulationState {
     return () => {
       if (pendingRef.current) clearTimeout(pendingRef.current);
     };
-  }, [bodies, hinges, actuators, springDampers, contactSpheres, contactPlanes, settings]);
+  }, [bodies, hinges, actuators, springDampers, contactSpheres, contactPlanes, contactHeightfields, settings]);
 
   return state;
 }

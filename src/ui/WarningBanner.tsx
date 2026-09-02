@@ -26,6 +26,7 @@ export function WarningBanner() {
   const settings = useModelStore((s) => s.settings);
   const contactSpheres = useModelStore((s) => s.contactSpheres);
   const contactPlanes = useModelStore((s) => s.contactPlanes);
+  const contactHeightfields = useModelStore((s) => s.contactHeightfields);
   const applyFix = useModelStore((s) => s.applyFix);
   const selectBody = useModelStore((s) => s.selectBody);
   const selectHinge = useModelStore((s) => s.selectHinge);
@@ -36,9 +37,9 @@ export function WarningBanner() {
   const [open, setOpen] = useState(false);
 
   const diagnostics = useMemo(() => {
-    const found = runDiagnostics(bodies, hinges, actuators, settings, contactSpheres, contactPlanes, springDampers);
+    const found = runDiagnostics(bodies, hinges, actuators, settings, contactSpheres, contactPlanes, springDampers, contactHeightfields);
     return found.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
-  }, [bodies, hinges, actuators, settings, contactSpheres, contactPlanes, springDampers]);
+  }, [bodies, hinges, actuators, settings, contactSpheres, contactPlanes, springDampers, contactHeightfields]);
 
   const active = diagnostics.filter((d) => !dismissed.has(d.id));
   if (active.length === 0) return null;
