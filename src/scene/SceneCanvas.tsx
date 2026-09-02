@@ -28,6 +28,7 @@ import { ContactHeightfieldView, ContactPlaneView, ContactSphereView } from './C
 type Props = {
   trajectory: Trajectory | null;
   frameIndex: number;
+  viewReset: number;
 };
 
 /**
@@ -97,6 +98,30 @@ function AutoFrame({
   return null;
 }
 
+/** Restore the predictable home camera after the user has orbited or panned out of sight. */
+function ResetView({ token, position }: { token: number; position: [number, number, number] }) {
+  const controls = useThree((state) => state.controls) as
+    | { target: THREE.Vector3; update: () => void }
+    | null;
+  const camera = useThree((state) => state.camera);
+  const invalidate = useThree((state) => state.invalidate);
+  const applied = useRef(token);
+
+  useEffect(() => {
+    // AutoFrame owns the initial camera placement. Only respond to an explicit button press.
+    if (!controls || applied.current === token) return;
+    applied.current = token;
+
+    camera.position.set(...position);
+    camera.up.set(0, 1, 0);
+    controls.target.set(0, 0, 0);
+    controls.update();
+    invalidate();
+  }, [camera, controls, invalidate, position, token]);
+
+  return null;
+}
+
 /**
  * The path traced by the selected body's centre of mass over the whole run.
  *
@@ -127,7 +152,7 @@ function useTrace(
   }, [trajectory, solver, bodyId, bodies]);
 }
 
-export function SceneCanvas({ trajectory, frameIndex }: Props) {
+export function SceneCanvas({ trajectory, frameIndex, viewReset }: Props) {
   const bodies = useModelStore((s) => s.bodies);
   const hinges = useModelStore((s) => s.hinges);
   const actuators = useModelStore((s) => s.actuators);
@@ -218,7 +243,10 @@ export function SceneCanvas({ trajectory, frameIndex }: Props) {
    */
   const scale = Math.max(0.05, bounds.radius);
 
-  const cameraPosition: [number, number, number] = isDesktop ? [3.6, 2.4, 4.6] : [4.6, 3.2, 5.8];
+  const cameraPosition: [number, number, number] = useMemo(
+    () => (isDesktop ? [3.6, 2.4, 4.6] : [4.6, 3.2, 5.8]),
+    [isDesktop],
+  );
 
   return (
     <Canvas
@@ -327,6 +355,7 @@ export function SceneCanvas({ trajectory, frameIndex }: Props) {
       />
 
       <AutoFrame center={bounds.center} radius={bounds.radius} token={frameToken} />
+      <ResetView token={viewReset} position={cameraPosition} />
       <InvalidateOnChange token={frameIndex} />
     </Canvas>
   );

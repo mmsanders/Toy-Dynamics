@@ -28,6 +28,52 @@
   touch-action: none;
 }
 
+.reset-view {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 14px);
+  right: 14px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid rgba(146, 160, 186, 0.28);
+  border-radius: var(--radius-sm);
+  background: rgba(18, 23, 34, 0.76);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.24);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  backdrop-filter: blur(8px);
+}
+
+.reset-view:hover {
+  border-color: var(--border-strong);
+  background: rgba(26, 33, 48, 0.94);
+  color: var(--text);
+}
+
+.reset-view:active {
+  transform: translateY(1px);
+}
+
+.reset-view svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+@media (max-width: 767px) {
+  .reset-view {
+    top: calc(env(safe-area-inset-top) + 52px);
+  }
+}
+
 .topbar {
   position: absolute;
   top: 0;
