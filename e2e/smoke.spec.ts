@@ -29,6 +29,16 @@ test('boots with the example model', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test('keeps the default-view reset available over the scene', async ({ page }) => {
+  const errors = await openApp(page);
+  const reset = page.getByRole('button', { name: 'Reset default view' });
+
+  await expect(reset).toBeVisible();
+  await reset.click();
+  await expect(reset).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test('adds and edits a passive two-node device', async ({ page }) => {
   const errors = await openApp(page);
   await page.getByRole('tab', { name: 'Devices' }).click();

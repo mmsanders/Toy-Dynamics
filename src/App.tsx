@@ -25,6 +25,7 @@ export function App() {
   const [time, setTime] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
+  const [viewReset, setViewReset] = useState(0);
 
   const stop = useCallback(() => setPlaying(false), []);
   usePlayback(simulation.trajectory, playing, speed, setTime, stop);
@@ -39,7 +40,24 @@ export function App() {
   return (
     <div className={`app${isDesktop ? ' app--desktop' : ''}`}>
       <div className="app__scene">
-        <SceneCanvas trajectory={simulation.trajectory} frameIndex={frameIndex} />
+        <SceneCanvas
+          trajectory={simulation.trajectory}
+          frameIndex={frameIndex}
+          viewReset={viewReset}
+        />
+        <button
+          className="reset-view"
+          type="button"
+          onClick={() => setViewReset((reset) => reset + 1)}
+          aria-label="Reset default view"
+          title="Reset default view"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4.6 8.2A8 8 0 1 1 4 14M4.6 8.2V3.8m0 4.4H9" />
+            <path d="m9 12 3-2 3 2v3.5l-3 2-3-2Z" />
+          </svg>
+          <span>Reset view</span>
+        </button>
       </div>
 
       {!isDesktop && (
