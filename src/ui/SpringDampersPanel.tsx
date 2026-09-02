@@ -56,15 +56,15 @@ export function SpringDampersPanel() {
   return (
     <div className="stack">
       <Section
-        title="Spring-dampers"
+        title="Passive"
         action={
-          <IconButton label="Add a spring-damper" onClick={() => add()} disabled={!canAdd}>
+          <IconButton label="Add a passive device" onClick={() => add()} disabled={!canAdd}>
             +
           </IconButton>
         }
       >
         {order.length === 0 && (
-          <EmptyState>No spring-dampers. Add one to connect a pair of nodes on different bodies.</EmptyState>
+          <EmptyState>No passive devices. Add one to connect a pair of nodes on different bodies.</EmptyState>
         )}
         {order.map((id) => {
           const entry = devices[id];
@@ -92,7 +92,7 @@ export function SpringDampersPanel() {
         })}
       </Section>
 
-      {!device && <EmptyState>Select a spring-damper to edit it.</EmptyState>}
+      {!device && <EmptyState>Select a passive device to edit it.</EmptyState>}
 
       {device && bodyA && bodyB && (
         <>

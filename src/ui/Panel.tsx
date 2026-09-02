@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { BottomSheet } from './BottomSheet';
 import { BodiesPanel } from './BodiesPanel';
 import { HingesPanel } from './HingesPanel';
-import { ActuatorsPanel } from './ActuatorsPanel';
+import { DevicesPanel } from './ActuatorsPanel';
 import { ContactPanel } from './ContactPanel';
 import { RunPanel } from './RunPanel';
 import { SetupPanel } from './SetupPanel';
@@ -12,7 +12,7 @@ import type { Trajectory } from '../sim/useSimulation';
 const TABS = [
   { id: 'bodies', label: 'Bodies' },
   { id: 'hinges', label: 'Hinges' },
-  { id: 'actuators', label: 'Actuators' },
+  { id: 'actuators', label: 'Devices' },
   { id: 'contact', label: 'Contact' },
   { id: 'run', label: 'Run' },
   { id: 'setup', label: 'Setup' },
@@ -64,7 +64,7 @@ export function Panel(props: Props) {
     <div className="panel__content" role="tabpanel">
       {tab === 'bodies' && <BodiesPanel />}
       {tab === 'hinges' && <HingesPanel />}
-      {tab === 'actuators' && <ActuatorsPanel />}
+      {tab === 'actuators' && <DevicesPanel />}
       {tab === 'contact' && <ContactPanel />}
       {tab === 'run' && <RunPanel {...props} />}
       {tab === 'setup' && <SetupPanel />}

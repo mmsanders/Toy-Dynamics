@@ -8,7 +8,15 @@ import {
   trajectorySpan,
   type Trajectory,
 } from '../sim/useSimulation';
-import { buildSolverModel, bodyPoses, bodyVelocities, nodeWorldPosition, totalMomentum } from '../sim/kinematics';
+import {
+  buildSolverModel,
+  bodyPoses,
+  makeBodyMotionEvaluator,
+  nodeWorldPosition,
+  totalMomentum,
+  type MotionFrame,
+  type SolverModel,
+} from '../sim/kinematics';
 import { buildCsv, downloadCsv } from '../sim/csv';
 import { unitLabel } from '../units';
 import { toDisplayAngle } from '../math/conventions';
@@ -16,6 +24,7 @@ import { AXIS_COLORS, MAX_SERIES, SERIES_COLORS } from '../theme';
 import { Legend, Plot, type Series } from './Plot';
 import { CopyableRow } from './CopyableRow';
 import { EmptyState, Note, Picker, Section } from './Bits';
+import { Segmented } from './Segmented';
 
 /**
  * The Run tab: play the trajectory back, read numbers off it, and export it.
@@ -65,6 +74,9 @@ export function RunPanel({
   const bodies = useModelStore((s) => s.bodies);
   const hinges = useModelStore((s) => s.hinges);
   const actuators = useModelStore((s) => s.actuators);
+  const springDampers = useModelStore((s) => s.springDampers);
+  const contactSpheres = useModelStore((s) => s.contactSpheres);
+  const contactPlanes = useModelStore((s) => s.contactPlanes);
   const settings = useModelStore((s) => s.settings);
   const conventions = useModelStore((s) => s.conventions);
   const selectedBodyId = useModelStore((s) => s.selectedBodyId);
@@ -72,10 +84,11 @@ export function RunPanel({
 
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
   const [readoutNodeId, setReadoutNodeId] = useState<string | null>(null);
+  const [motionFrame, setMotionFrame] = useState<MotionFrame>('world');
 
   const solver = useMemo(
-    () => buildSolverModel(bodies, hinges, actuators, settings),
-    [bodies, hinges, actuators, settings],
+    () => buildSolverModel(bodies, hinges, actuators, settings, springDampers, contactSpheres, contactPlanes),
+    [bodies, hinges, actuators, settings, contactSpheres, contactPlanes, springDampers],
   );
 
   const frame = useMemo(() => {
@@ -84,10 +97,17 @@ export function RunPanel({
     return Math.min(trajectory.count - 1, Math.max(0, index));
   }, [trajectory, time]);
 
-  const groups = useMemo(
+  const jointGroups = useMemo(
     () => (trajectory ? buildGroups(trajectory, settings, conventions) : []),
     [trajectory, settings, conventions],
   );
+  const motionGroups = useMemo(() => {
+    const body = bodies[selectedBodyId];
+    if (!trajectory || !('model' in solver) || !body || body.isGround) return [];
+    return buildBodyMotionGroups(trajectory, solver, body, motionFrame, settings);
+  }, [trajectory, solver, bodies, selectedBodyId, motionFrame, settings]);
+  const groups = [...motionGroups, ...jointGroups];
+  const selectedBody = bodies[selectedBodyId];
 
   const visible = (group: Group): Series[] => group.series.filter((s) => !hidden.has(s.id));
 
@@ -161,6 +181,24 @@ export function RunPanel({
         )}
       </Section>
 
+      {trajectory && trajectory.count > 0 && selectedBody && !selectedBody.isGround && (
+        <Section title="Motion vectors">
+          <Segmented
+            label="Express components in"
+            value={motionFrame}
+            options={[
+              { value: 'world', label: 'World', title: 'Fixed inertial world axes' },
+              { value: 'body', label: 'Body', title: 'The selected body’s rotating axes' },
+            ]}
+            onChange={setMotionFrame}
+          />
+          <Note>
+            This changes the linear and angular velocity and acceleration readout and plots for
+            {` ${selectedBody.name}`}. Joint coordinates and energy keep their own natural bases.
+          </Note>
+        </Section>
+      )}
+
       {trajectory && trajectory.count > 0 && 'model' in solver && (
         <Readout
           trajectory={trajectory}
@@ -172,6 +210,7 @@ export function RunPanel({
           nodeId={readoutNodeId}
           onNode={setReadoutNodeId}
           units={settings.units}
+          motionFrame={motionFrame}
         />
       )}
 
@@ -330,6 +369,7 @@ function Readout({
   nodeId,
   onNode,
   units,
+  motionFrame,
 }: {
   trajectory: Trajectory;
   frame: number;
@@ -340,19 +380,23 @@ function Readout({
   nodeId: string | null;
   onNode: (id: string | null) => void;
   units: ReturnType<typeof useModelStore.getState>['settings']['units'];
+  motionFrame: MotionFrame;
 }) {
   const q = frameQ(trajectory, frame);
   const v = frameV(trajectory, frame);
   const energy = frameEnergy(trajectory, frame);
 
   const poses = useMemo(() => bodyPoses(solver, q), [solver, q]);
-  const velocities = useMemo(() => bodyVelocities(solver, q, v), [solver, q, v]);
+  const motion = useMemo(
+    () => makeBodyMotionEvaluator(solver).at(q, v, frameTime(trajectory, frame), motionFrame),
+    [solver, q, v, trajectory, frame, motionFrame],
+  );
   const momentum = useMemo(() => totalMomentum(solver, q, v), [solver, q, v]);
 
   const body = bodies[bodyId];
   const movable = Object.values(bodies).filter((b) => !b.isGround);
   const pose = poses.get(bodyId);
-  const velocity = velocities.get(bodyId);
+  const bodyMotion = motion.get(bodyId);
 
   const node = body && nodeId ? body.nodes[nodeId] : undefined;
   const point = pose && node ? nodeWorldPosition(pose, node.position) : pose?.position;
@@ -363,6 +407,7 @@ function Readout({
     if (abs !== 0 && (abs >= 1e5 || abs < 1e-4)) return value.toExponential(3);
     return (Math.round(value * 1e6) / 1e6).toString();
   };
+  const frameName = motionFrame === 'world' ? 'world axes' : 'body axes';
 
   return (
     <Section title={`At t = ${frameTime(trajectory, frame).toFixed(3)}`}>
@@ -396,22 +441,38 @@ function Readout({
             />
           )}
 
-          {velocity && (
+          {bodyMotion && (
             <>
               <CopyableRow
-                heading={`Velocity · ${unitLabel(units, 'velocity')}`}
+                heading={`Linear velocity · ${unitLabel(units, 'velocity')} · ${frameName}`}
                 values={[
-                  { name: 'X', value: fmt(velocity.linear[0]), color: AXIS_COLORS.X },
-                  { name: 'Y', value: fmt(velocity.linear[1]), color: AXIS_COLORS.Y },
-                  { name: 'Z', value: fmt(velocity.linear[2]), color: AXIS_COLORS.Z },
+                  { name: 'X', value: fmt(bodyMotion.velocity.linear[0]), color: AXIS_COLORS.X },
+                  { name: 'Y', value: fmt(bodyMotion.velocity.linear[1]), color: AXIS_COLORS.Y },
+                  { name: 'Z', value: fmt(bodyMotion.velocity.linear[2]), color: AXIS_COLORS.Z },
                 ]}
               />
               <CopyableRow
-                heading={`Angular velocity · ${unitLabel(units, 'angularVelocity')}`}
+                heading={`Angular velocity · ${unitLabel(units, 'angularVelocity')} · ${frameName}`}
                 values={[
-                  { name: 'X', value: fmt(velocity.angular[0]), color: AXIS_COLORS.X },
-                  { name: 'Y', value: fmt(velocity.angular[1]), color: AXIS_COLORS.Y },
-                  { name: 'Z', value: fmt(velocity.angular[2]), color: AXIS_COLORS.Z },
+                  { name: 'X', value: fmt(bodyMotion.velocity.angular[0]), color: AXIS_COLORS.X },
+                  { name: 'Y', value: fmt(bodyMotion.velocity.angular[1]), color: AXIS_COLORS.Y },
+                  { name: 'Z', value: fmt(bodyMotion.velocity.angular[2]), color: AXIS_COLORS.Z },
+                ]}
+              />
+              <CopyableRow
+                heading={`Linear acceleration · ${unitLabel(units, 'acceleration')} · ${frameName}`}
+                values={[
+                  { name: 'X', value: fmt(bodyMotion.acceleration.linear[0]), color: AXIS_COLORS.X },
+                  { name: 'Y', value: fmt(bodyMotion.acceleration.linear[1]), color: AXIS_COLORS.Y },
+                  { name: 'Z', value: fmt(bodyMotion.acceleration.linear[2]), color: AXIS_COLORS.Z },
+                ]}
+              />
+              <CopyableRow
+                heading={`Angular acceleration · ${unitLabel(units, 'angularAcceleration')} · ${frameName}`}
+                values={[
+                  { name: 'X', value: fmt(bodyMotion.acceleration.angular[0]), color: AXIS_COLORS.X },
+                  { name: 'Y', value: fmt(bodyMotion.acceleration.angular[1]), color: AXIS_COLORS.Y },
+                  { name: 'Z', value: fmt(bodyMotion.acceleration.angular[2]), color: AXIS_COLORS.Z },
                 ]}
               />
             </>
@@ -505,10 +566,82 @@ function buildGroups(
   if (translational.length > 0)
     groups.push({ id: 'offsets', title: 'Joint offsets', unit: unitLabel(settings.units, 'length'), series: translational });
   if (angularRates.length > 0)
-    groups.push({ id: 'angular-rates', title: 'Angular rates', unit: `${angleUnit}/s`, series: angularRates });
+    groups.push({ id: 'angular-rates', title: 'Angular joint rates', unit: `${angleUnit}/s`, series: angularRates });
   if (linearRates.length > 0)
-    groups.push({ id: 'linear-rates', title: 'Linear rates', unit: unitLabel(settings.units, 'velocity'), series: linearRates });
+    groups.push({ id: 'linear-rates', title: 'Linear joint rates', unit: unitLabel(settings.units, 'velocity'), series: linearRates });
   groups.push({ id: 'energy', title: 'Energy', unit: unitLabel(settings.units, 'energy'), series: energySeries });
 
   return groups;
+}
+
+/**
+ * Physical motion of the currently selected body. Generalized joint rates already have a
+ * natural joint basis, so these are deliberately separate charts rather than pretending the
+ * frame selector can re-express a coordinate or an energy scalar.
+ */
+function buildBodyMotionGroups(
+  trajectory: Trajectory,
+  solver: SolverModel,
+  body: { id: string; name: string },
+  frame: MotionFrame,
+  settings: ReturnType<typeof useModelStore.getState>['settings'],
+): Group[] {
+  const size = trajectory.count * 3;
+  const linearVelocity = new Float64Array(size).fill(Number.NaN);
+  const angularVelocity = new Float64Array(size).fill(Number.NaN);
+  const linearAcceleration = new Float64Array(size).fill(Number.NaN);
+  const angularAcceleration = new Float64Array(size).fill(Number.NaN);
+  const evaluator = makeBodyMotionEvaluator(solver);
+
+  for (let i = 0; i < trajectory.count; i++) {
+    const value = evaluator.at(frameQ(trajectory, i), frameV(trajectory, i), frameTime(trajectory, i), frame).get(body.id);
+    if (!value) continue;
+    for (let axis = 0; axis < 3; axis++) {
+      const at = 3 * i + axis;
+      linearVelocity[at] = value.velocity.linear[axis]!;
+      angularVelocity[at] = value.velocity.angular[axis]!;
+      linearAcceleration[at] = value.acceleration.linear[axis]!;
+      angularAcceleration[at] = value.acceleration.angular[axis]!;
+    }
+  }
+
+  const axes = [
+    { label: 'X', color: AXIS_COLORS.X },
+    { label: 'Y', color: AXIS_COLORS.Y },
+    { label: 'Z', color: AXIS_COLORS.Z },
+  ];
+  const series = (kind: string, values: Float64Array): Series[] =>
+    axes.map((axis, index) => ({
+      id: `motion:${body.id}:${frame}:${kind}:${axis.label}`,
+      label: axis.label,
+      color: axis.color,
+      at: (sample) => values[3 * sample + index] ?? Number.NaN,
+    }));
+
+  return [
+    {
+      id: `motion:${body.id}:${frame}:linear-velocity`,
+      title: `Linear velocity · ${body.name}`,
+      unit: unitLabel(settings.units, 'velocity'),
+      series: series('linear-velocity', linearVelocity),
+    },
+    {
+      id: `motion:${body.id}:${frame}:angular-velocity`,
+      title: `Angular velocity · ${body.name}`,
+      unit: unitLabel(settings.units, 'angularVelocity'),
+      series: series('angular-velocity', angularVelocity),
+    },
+    {
+      id: `motion:${body.id}:${frame}:linear-acceleration`,
+      title: `Linear acceleration · ${body.name}`,
+      unit: unitLabel(settings.units, 'acceleration'),
+      series: series('linear-acceleration', linearAcceleration),
+    },
+    {
+      id: `motion:${body.id}:${frame}:angular-acceleration`,
+      title: `Angular acceleration · ${body.name}`,
+      unit: unitLabel(settings.units, 'angularAcceleration'),
+      series: series('angular-acceleration', angularAcceleration),
+    },
+  ];
 }

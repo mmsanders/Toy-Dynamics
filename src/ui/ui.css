@@ -182,7 +182,7 @@
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-dim);
-  /* Six tabs share a 396px sidebar; 13px is the largest size at which "Actuators" still
+  /* Six tabs share a 396px sidebar; 13px is the largest size at which "Devices" still
      fits its share without colliding with its neighbour. */
   font-size: 13px;
   font-weight: 500;

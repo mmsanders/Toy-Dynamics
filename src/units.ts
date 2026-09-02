@@ -23,6 +23,7 @@ export type Quantity =
   | 'velocity'
   | 'angularVelocity'
   | 'acceleration'
+  | 'angularAcceleration'
   | 'linearStiffness'
   | 'angularStiffness'
   | 'linearDamping'
@@ -52,6 +53,7 @@ const SI_LABELS: Record<Quantity, string> = {
   velocity: 'm/s',
   angularVelocity: 'rad/s',
   acceleration: 'm/s²',
+  angularAcceleration: 'rad/s²',
   linearStiffness: 'N/m',
   angularStiffness: 'N·m/rad',
   linearDamping: 'N·s/m',
@@ -69,6 +71,7 @@ const IMPERIAL_LABELS: Record<Quantity, string> = {
   velocity: 'ft/s',
   angularVelocity: 'rad/s',
   acceleration: 'ft/s²',
+  angularAcceleration: 'rad/s²',
   linearStiffness: 'lbf/ft',
   angularStiffness: 'ft·lbf/rad',
   linearDamping: 'lbf·s/ft',
@@ -92,6 +95,7 @@ const GENERIC_LABELS: Record<Quantity, string> = {
   velocity: '[L/T]',
   angularVelocity: '[rad/T]',
   acceleration: '[L/T²]',
+  angularAcceleration: '[rad/T²]',
   linearStiffness: '[F/L]',
   angularStiffness: '[F·L/rad]',
   linearDamping: '[F·T/L]',

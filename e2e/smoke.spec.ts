@@ -29,13 +29,13 @@ test('boots with the example model', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test('adds and edits a two-node spring-damper', async ({ page }) => {
+test('adds and edits a passive two-node device', async ({ page }) => {
   const errors = await openApp(page);
-  await page.getByRole('tab', { name: 'Actuators' }).click();
-  await page.getByRole('button', { name: 'Spring-dampers' }).click();
-  await expect(page.getByText('No spring-dampers.')).toBeVisible();
+  await page.getByRole('tab', { name: 'Devices' }).click();
+  await page.getByRole('button', { name: 'Passive' }).click();
+  await expect(page.getByText('No passive devices.')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Add a spring-damper' }).click();
+  await page.getByRole('button', { name: 'Add a passive device' }).click();
   await expect(page.getByRole('combobox', { name: 'End A body' })).toHaveValue('ground');
   await expect(page.getByRole('combobox', { name: 'End B body' })).toHaveValue('upper');
 
@@ -65,7 +65,15 @@ test('draws the time-history plots with a legend and a unit', async ({ page }) =
   await page.getByRole('tab', { name: 'Run' }).click();
   await expect(page.locator('.plot').first()).toBeVisible({ timeout: 30_000 });
 
-  expect(await page.locator('.plot').count()).toBeGreaterThanOrEqual(2);
+  await expect(page.getByText(/Linear velocity · Upper Arm/)).toBeVisible();
+  await expect(page.getByText(/Linear acceleration ·/)).toBeVisible();
+  await expect(page.getByText(/Angular acceleration ·/)).toBeVisible();
+
+  const frame = page.getByRole('group', { name: 'Express components in' });
+  await frame.getByRole('button', { name: 'Body', exact: true }).click();
+  await expect(page.getByText(/body axes/).first()).toBeVisible();
+
+  expect(await page.locator('.plot').count()).toBeGreaterThanOrEqual(6);
   // Identity never rests on colour alone, and every chart names its unit.
   await expect(page.locator('.legend').first()).toBeVisible();
   await expect(page.locator('.plot__unit').first()).not.toBeEmpty();
@@ -171,7 +179,7 @@ test('static friction holds a loaded joint completely still', async ({ page }) =
   await openApp(page);
 
   // Silence the driving actuator so gravity alone loads the joints.
-  await page.getByRole('tab', { name: 'Actuators' }).click();
+  await page.getByRole('tab', { name: 'Devices' }).click();
   await page.getByRole('button', { name: 'Disable' }).first().click();
 
   const forearmPositionAt = async (time: string) => {
