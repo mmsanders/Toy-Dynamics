@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createRun, type Run, type RunInput } from './runner';
 import { initialModel } from '../store/defaults';
-import { buildSolverModel, bodyPoses, bodyVelocities, totalMomentum } from './kinematics';
+import { bodyAccelerations, buildSolverModel, bodyPoses, bodyVelocities, totalMomentum } from './kinematics';
 import { buildCsv } from './csv';
 import { frameEnergy, frameQ, frameTime, frameV, frameAtTime, type Trajectory } from './useSimulation';
 
@@ -231,6 +231,22 @@ describe('derived kinematics', () => {
     return solver;
   };
 
+  /** A single body with its centre of mass and frame origin together, for exact motion checks. */
+  const singleBodyInput = (): RunInput => {
+    const input = baseInput();
+    input.bodies = structuredClone(input.bodies);
+    input.hinges = structuredClone(input.hinges);
+    const upper = input.bodies.upper!;
+    upper.nodes['upper-com']!.position = [0, 0, 0];
+    delete input.bodies.lower;
+    delete input.hinges.elbow;
+    input.actuators = {};
+    input.contactSpheres = {};
+    input.contactPlanes = {};
+    input.settings = { ...input.settings, gravity: [0, 0, 0], duration: 0.1 };
+    return input;
+  };
+
   it('places bodies where the model says they are', () => {
     const input = baseInput();
     const solver = solverOf(input);
@@ -287,6 +303,84 @@ describe('derived kinematics', () => {
     const upper = velocities.get('upper')!;
     expect(Math.hypot(...upper.linear)).toBeCloseTo(0, 9);
     expect(Math.abs(upper.angular[1]!)).toBeGreaterThan(0);
+  });
+
+  it('reports exact inertial acceleration and re-expresses it in body axes', () => {
+    const input = singleBodyInput();
+    const shoulder = input.hinges.shoulder!;
+    shoulder.dof = shoulder.dof.map((dof, axis) => ({
+      ...dof,
+      free: axis === 0,
+      q0: axis === 4 ? Math.PI / 2 : 0,
+      u0: 0,
+      damping: 0,
+      friction: 0,
+    }));
+    input.actuators = {
+      shove: {
+        id: 'shove', name: 'Shove', kind: 'force', bodyId: 'upper', nodeId: 'upper-root',
+        frame: 'world', vector: [6, 0, 0], profile: { kind: 'constant' }, enabled: true, color: '#fff',
+      },
+    };
+
+    const solver = solverOf(input);
+    const world = bodyAccelerations(solver, solver.model.q0, solver.model.v0, 0, 'world').get('upper')!;
+    // 6 N / 3 kg, with no other degree of freedom available.
+    expect(world.linear[0]).toBeCloseTo(2, 10);
+    expect(world.linear[1]).toBeCloseTo(0, 10);
+    expect(world.angular).toEqual(expect.arrayContaining([0, 0, 0]));
+
+    const body = bodyAccelerations(solver, solver.model.q0, solver.model.v0, 0, 'body').get('upper')!;
+    // The body is turned 90° about Y, so the same inertial vector lands entirely on a
+    // body Z axis. A component-frame choice must rotate the components, not the physics.
+    expect(body.linear[0]).toBeCloseTo(0, 10);
+    expect(Math.abs(body.linear[2]!)).toBeCloseTo(2, 10);
+  });
+
+  it('reports angular acceleration from an applied moment', () => {
+    const input = singleBodyInput();
+    const shoulder = input.hinges.shoulder!;
+    shoulder.dof = shoulder.dof.map((dof, axis) => ({
+      ...dof,
+      free: axis === 4,
+      q0: 0,
+      u0: 0,
+      damping: 0,
+      friction: 0,
+    }));
+    input.actuators = {
+      twist: {
+        id: 'twist', name: 'Twist', kind: 'moment', bodyId: 'upper', nodeId: 'upper-root',
+        frame: 'body', vector: [0, 3.6, 0], profile: { kind: 'constant' }, enabled: true, color: '#fff',
+      },
+    };
+
+    const solver = solverOf(input);
+    const acceleration = bodyAccelerations(solver, solver.model.q0, solver.model.v0, 0).get('upper')!;
+    // Iyy is 0.36 kg·m², so αy = 3.6 / 0.36 = 10 rad/s².
+    expect(acceleration.angular[0]).toBeCloseTo(0, 10);
+    expect(acceleration.angular[1]).toBeCloseTo(10, 10);
+    expect(acceleration.angular[2]).toBeCloseTo(0, 10);
+  });
+
+  it('reports gravitational free fall as inertial acceleration', () => {
+    const input = singleBodyInput();
+    const shoulder = input.hinges.shoulder!;
+    shoulder.dof = shoulder.dof.map((dof, axis) => ({
+      ...dof,
+      free: axis === 2,
+      q0: 0,
+      u0: 0,
+      damping: 0,
+      friction: 0,
+    }));
+    input.settings = { ...input.settings, gravity: [0, 0, -9.80665] };
+
+    const solver = solverOf(input);
+    const acceleration = bodyAccelerations(solver, solver.model.q0, solver.model.v0, 0).get('upper')!;
+    expect(acceleration.linear[0]).toBeCloseTo(0, 10);
+    expect(acceleration.linear[1]).toBeCloseTo(0, 10);
+    expect(acceleration.linear[2]).toBeCloseTo(-9.80665, 10);
   });
 });
 

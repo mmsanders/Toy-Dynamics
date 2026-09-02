@@ -56,16 +56,16 @@ integrator's stages, so a transition lands one step late; letting the set shift 
 would make the derivative discontinuous, which is the thing Runge-Kutta assumes never
 happens.
 
-**Actuators** attach to a node and apply either a pure force or a pure moment — two different
+**Active devices** attach to a node and apply either a pure force or a pure moment — two different
 things, drawn differently, because a force away from the centre of mass also spins the body
 and a moment does not. Each one is body-fixed or world-fixed: a thruster bolted to a tumbling
 body sweeps its thrust around with it, and one pointing a fixed way in space does not.
 Identical numbers, completely different motion.
 
-Actuators run on a time profile — constant, step, ramp, sine, impulse — or on an arbitrary
+Active devices run on a time profile — constant, step, ramp, sine, impulse — or on an arbitrary
 `f(t)` expression when none of those fits.
 
-**Spring-dampers** are passive two-node devices, edited beside actuators. They connect nodes
+**Passive devices** are spring-dampers edited beside active devices. They connect nodes
 on different bodies (including Ground as a fixed anchor), apply equal-and-opposite axial
 forces, and expose stiffness, damping, and rest length. Their elastic energy is included in
 the run's energy readout; damping correctly removes energy from the system.
@@ -114,6 +114,10 @@ Trajectories integrate in a Web Worker and stream back as they are computed, so 
 waits on simulating. The 3D view meanwhile draws the initial pose — pure kinematics,
 microseconds — which is what lets dragging a slider update the view immediately with the
 trajectory catching up behind it.
+
+Run output includes body-origin linear and angular velocity and acceleration. Those vector
+components can be expressed in the fixed inertial world axes or in the selected body's own
+rotating axes; the same choice applies to the readout and the body-motion plots.
 
 ## Units are not enforced
 

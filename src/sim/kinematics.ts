@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Actuator, Body, Hinge, Quat, SimSettings, SpringDamper, Vec3 } from '../types';
+import type { Actuator, Body, ContactPlane, ContactSphere, Hinge, Quat, SimSettings, SpringDamper, Vec3 } from '../types';
 import { buildSpec } from '../model/adapter';
 import {
   buildModel,
@@ -8,7 +8,8 @@ import {
   updateVelocities,
   type MultibodyModel,
 } from '../dyn/model';
-import { transformCompose, v3 } from '../dyn/spatial';
+import { forwardDynamics, makeDynamics } from '../dyn/forward';
+import { applyMotion, crossMotion, sv, transformCompose, v3 } from '../dyn/spatial';
 import { transform } from '../dyn/spatial';
 
 /**
@@ -26,14 +27,25 @@ export type SolverModel = {
   linkOf: Map<string, number>;
 };
 
+/** Axes used to express body-motion vectors in Run. */
+export type MotionFrame = 'world' | 'body';
+
+/** Linear and angular components of a body quantity, both measured at the body origin. */
+export type BodyVector = { linear: Vec3; angular: Vec3 };
+
+/** Velocity and inertial acceleration at a body's frame origin. */
+export type BodyMotion = { velocity: BodyVector; acceleration: BodyVector };
+
 export function buildSolverModel(
   bodies: Record<string, Body>,
   hinges: Record<string, Hinge>,
   actuators: Record<string, Actuator>,
   settings: SimSettings,
   springDampers: Record<string, SpringDamper> = {},
+  contactSpheres: Record<string, ContactSphere> = {},
+  contactPlanes: Record<string, ContactPlane> = {},
 ): SolverModel | { error: string } {
-  const built = buildSpec(bodies, hinges, actuators, settings, {}, {}, springDampers);
+  const built = buildSpec(bodies, hinges, actuators, settings, contactSpheres, contactPlanes, springDampers);
   if (!built.ok) return { error: built.problems[0]?.message ?? 'The model could not be assembled.' };
   try {
     return { model: buildModel(built.spec), linkOf: built.bodyIndex };
@@ -109,44 +121,158 @@ export function bodyVelocities(
   solver: SolverModel,
   q: Float64Array,
   v: Float64Array,
-): Map<string, { linear: Vec3; angular: Vec3 }> {
+  frame: MotionFrame = 'world',
+): Map<string, BodyVector> {
   const { model, linkOf } = solver;
   const scratch = makeKinematicsScratch();
   updateKinematics(model, q, v, scratch);
   updateVelocities(model, scratch);
 
-  const out = new Map<string, { linear: Vec3; angular: Vec3 }>();
-  const offset = v3();
+  const out = new Map<string, BodyVector>();
 
   for (const [bodyId, index] of linkOf) {
     const link = model.links[index];
     if (!link) continue;
+    out.set(bodyId, bodyVelocity(link, frame));
+  }
+  return out;
+}
 
-    // Link-frame spatial velocity, rotated out to world axes.
-    const e = link.Xworld.E;
-    const rot = (x: number, y: number, z: number): Vec3 => [
+/** Rotate a link-coordinate vector into either world or the body's own axes. */
+function expressVector(link: MultibodyModel['links'][number], x: number, y: number, z: number, frame: MotionFrame): Vec3 {
+  const e = frame === 'world' ? link.Xworld.E : link.linkToBody.E;
+  // Xworld maps world → link, so its transpose carries vectors out to world. linkToBody,
+  // in contrast, already maps link → body and is applied directly.
+  if (frame === 'world') {
+    return [
       e[0]! * x + e[3]! * y + e[6]! * z,
       e[1]! * x + e[4]! * y + e[7]! * z,
       e[2]! * x + e[5]! * y + e[8]! * z,
     ];
-    const angular = rot(link.v[0]!, link.v[1]!, link.v[2]!);
-    const linearAtLink = rot(link.v[3]!, link.v[4]!, link.v[5]!);
-
-    // Shift the reference point from the link origin to the body origin.
-    const b = link.linkToBody.r;
-    offset[0] = b[0]!;
-    offset[1] = b[1]!;
-    offset[2] = b[2]!;
-    const worldOffset = rot(-offset[0]!, -offset[1]!, -offset[2]!);
-    const linear: Vec3 = [
-      linearAtLink[0] + (angular[1] * worldOffset[2] - angular[2] * worldOffset[1]),
-      linearAtLink[1] + (angular[2] * worldOffset[0] - angular[0] * worldOffset[2]),
-      linearAtLink[2] + (angular[0] * worldOffset[1] - angular[1] * worldOffset[0]),
-    ];
-
-    out.set(bodyId, { linear, angular });
   }
-  return out;
+  return [
+    e[0]! * x + e[1]! * y + e[2]! * z,
+    e[3]! * x + e[4]! * y + e[5]! * z,
+    e[6]! * x + e[7]! * y + e[8]! * z,
+  ];
+}
+
+/** Velocity at the body-frame origin, expressed in the requested axes. */
+function bodyVelocity(link: MultibodyModel['links'][number], frame: MotionFrame): BodyVector {
+  const wx = link.v[0]!, wy = link.v[1]!, wz = link.v[2]!;
+  // linkToBody.r is the link origin as seen from the body, so its negative is the fixed
+  // vector from link origin to body origin, in link axes.
+  const px = -link.linkToBody.r[0]!, py = -link.linkToBody.r[1]!, pz = -link.linkToBody.r[2]!;
+  const linearX = link.v[3]! + wy * pz - wz * py;
+  const linearY = link.v[4]! + wz * px - wx * pz;
+  const linearZ = link.v[5]! + wx * py - wy * px;
+  return {
+    angular: expressVector(link, wx, wy, wz, frame),
+    linear: expressVector(link, linearX, linearY, linearZ, frame),
+  };
+}
+
+/**
+ * Spatial accelerations from a generalized acceleration, with a zero inertial base.
+ *
+ * RNEA intentionally starts at −gravity to turn gravity into an inertial load. That is
+ * exactly right for forces, but not for a Run readout: a freely falling body has a real
+ * inertial acceleration of g, not zero. This small forward pass therefore uses a zero base.
+ */
+function inertialLinkAccelerations(model: MultibodyModel, qdd: Float64Array): Float64Array[] {
+  const acceleration = model.links.map(() => sv());
+  const base = sv();
+  const tmp = sv();
+  const scratch = v3();
+
+  for (let i = 0; i < model.links.length; i++) {
+    const link = model.links[i]!;
+    const parent = link.parent < 0 ? base : acceleration[link.parent]!;
+    const a = acceleration[i]!;
+    applyMotion(link.X, parent, a, scratch);
+    crossMotion(link.v, link.jw.vJ, tmp);
+    for (let r = 0; r < 6; r++) a[r] = a[r]! + link.jw.cJ[r]! + tmp[r]!;
+
+    const { S } = link.jw;
+    for (let c = 0; c < link.joint.nv; c++) {
+      const value = qdd[link.joint.vOffset + c]!;
+      if (value === 0) continue;
+      const baseIndex = 6 * c;
+      for (let r = 0; r < 6; r++) a[r] = a[r]! + value * S[baseIndex + r]!;
+    }
+  }
+  return acceleration;
+}
+
+/**
+ * Build a reusable evaluator for physical body motion. A chart needs every sample, so the
+ * dynamics work buffers live here instead of allocating a fresh solver for each frame.
+ */
+export function makeBodyMotionEvaluator(solver: SolverModel): {
+  at: (q: Float64Array, v: Float64Array, time: number, frame?: MotionFrame) => Map<string, BodyMotion>;
+} {
+  const dynamics = makeDynamics(solver.model);
+  const qdd = new Float64Array(solver.model.nv);
+
+  return {
+    at(q, v, time, frame = 'world') {
+      qdd.fill(0);
+      forwardDynamics(dynamics, q, v, time, qdd);
+      // forwardDynamics intentionally returns immediately for a zero-DOF model. Refreshing
+      // kinematics here also makes that harmless case report its (zero) motion correctly.
+      updateKinematics(solver.model, q, v, dynamics.kin);
+      updateVelocities(solver.model, dynamics.kin);
+      const linkAcceleration = inertialLinkAccelerations(solver.model, qdd);
+      const out = new Map<string, BodyMotion>();
+
+      for (const [bodyId, index] of solver.linkOf) {
+        const link = solver.model.links[index];
+        const a = linkAcceleration[index];
+        if (!link || !a) continue;
+
+        const velocity = bodyVelocity(link, frame);
+        const wx = link.v[0]!, wy = link.v[1]!, wz = link.v[2]!;
+        const ax = a[0]!, ay = a[1]!, az = a[2]!;
+        const px = -link.linkToBody.r[0]!, py = -link.linkToBody.r[1]!, pz = -link.linkToBody.r[2]!;
+        // a(P) = a(O) + α × r + ω × (ω × r) for a point fixed to the body.
+        const alphaCrossPX = ay * pz - az * py;
+        const alphaCrossPY = az * px - ax * pz;
+        const alphaCrossPZ = ax * py - ay * px;
+        const omegaCrossPX = wy * pz - wz * py;
+        const omegaCrossPY = wz * px - wx * pz;
+        const omegaCrossPZ = wx * py - wy * px;
+        const centripetalX = wy * omegaCrossPZ - wz * omegaCrossPY;
+        const centripetalY = wz * omegaCrossPX - wx * omegaCrossPZ;
+        const centripetalZ = wx * omegaCrossPY - wy * omegaCrossPX;
+        out.set(bodyId, {
+          velocity,
+          acceleration: {
+            angular: expressVector(link, ax, ay, az, frame),
+            linear: expressVector(
+              link,
+              a[3]! + alphaCrossPX + centripetalX,
+              a[4]! + alphaCrossPY + centripetalY,
+              a[5]! + alphaCrossPZ + centripetalZ,
+              frame,
+            ),
+          },
+        });
+      }
+      return out;
+    },
+  };
+}
+
+/** Acceleration at every body origin, evaluated from the model's equations at this instant. */
+export function bodyAccelerations(
+  solver: SolverModel,
+  q: Float64Array,
+  v: Float64Array,
+  time: number,
+  frame: MotionFrame = 'world',
+): Map<string, BodyVector> {
+  const motion = makeBodyMotionEvaluator(solver).at(q, v, time, frame);
+  return new Map([...motion].map(([id, value]) => [id, value.acceleration]));
 }
 
 /**

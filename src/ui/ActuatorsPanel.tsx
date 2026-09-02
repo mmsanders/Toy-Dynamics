@@ -49,25 +49,25 @@ function defaultProfile(kind: Profile['kind']): Profile {
   }
 }
 
-export function ActuatorsPanel() {
-  const [mode, setMode] = useState<'actuators' | 'springDampers'>('actuators');
+export function DevicesPanel() {
+  const [mode, setMode] = useState<'active' | 'passive'>('active');
   return (
     <div className="stack">
       <Segmented
-        label="Force source"
+        label="Device behavior"
         value={mode}
         options={[
-          { value: 'actuators', label: 'Actuators', title: 'One-body forces and moments with time profiles' },
-          { value: 'springDampers', label: 'Spring-dampers', title: 'Passive forces between two body nodes' },
+          { value: 'active', label: 'Active', title: 'One-body forces and moments with time profiles' },
+          { value: 'passive', label: 'Passive', title: 'Passive forces between two body nodes' },
         ]}
         onChange={setMode}
       />
-      {mode === 'actuators' ? <ActuatorEditor /> : <SpringDampersPanel />}
+      {mode === 'active' ? <ActiveDevicesPanel /> : <SpringDampersPanel />}
     </div>
   );
 }
 
-function ActuatorEditor() {
+function ActiveDevicesPanel() {
   const bodies = useModelStore((s) => s.bodies);
   const actuators = useModelStore((s) => s.actuators);
   const actuatorOrder = useModelStore((s) => s.actuatorOrder);
@@ -94,15 +94,15 @@ function ActuatorEditor() {
   return (
     <div className="stack">
       <Section
-        title="Actuators"
+        title="Active"
         action={
-          <IconButton label="Add an actuator" onClick={() => addActuator()} disabled={movable.length === 0}>
+          <IconButton label="Add an active device" onClick={() => addActuator()} disabled={movable.length === 0}>
             +
           </IconButton>
         }
       >
         {actuatorOrder.length === 0 && (
-          <EmptyState>No actuators. The model will move only under gravity and its initial rates.</EmptyState>
+          <EmptyState>No active devices. The model will move only under gravity and its initial rates.</EmptyState>
         )}
         {actuatorOrder.map((id) => {
           const entry = actuators[id];
