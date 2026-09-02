@@ -11,6 +11,7 @@ import { m3FromQuat } from '../dyn/spatial';
 import { buildModel } from '../dyn/model';
 import { makeDynamics } from '../dyn/forward';
 import { makeStepScratch, step, type State } from '../dyn/integrate';
+import { MAX_HEIGHTFIELD_SAMPLES } from '../dyn/contact';
 import { gravityOnSystemChange, STANDARD_GRAVITY_IMPERIAL, STANDARD_GRAVITY_SI } from '../units';
 import { GROUND_ID, type Vec3 } from '../types';
 
@@ -261,7 +262,7 @@ describe('unit systems', () => {
 describe('diagnostics', () => {
   const run = () => {
     const s = useModelStore.getState();
-    return runDiagnostics(s.bodies, s.hinges, s.actuators, s.settings, s.contactSpheres, s.contactPlanes);
+    return runDiagnostics(s.bodies, s.hinges, s.actuators, s.settings, s.contactSpheres, s.contactPlanes, s.springDampers, s.contactHeightfields);
   };
   const ids = () => run().map((d) => d.id);
 
@@ -514,6 +515,24 @@ describe('persistence repair', () => {
     const repaired = repairModel({ bodies: { a: {} }, settings: { dt: 0, duration: -5 } })!;
     expect(repaired.settings.dt).toBeGreaterThan(0);
     expect(repaired.settings.duration).toBeGreaterThan(0);
+  });
+
+  it('repairs heightfield dimensions, no-data, and practical size limits', () => {
+    const repaired = repairModel({
+      bodies: { a: {} },
+      contactHeightfields: {
+        terrain: {
+          name: 'Terrain', spacing: -1, columns: 1000, rows: 1000,
+          heights: [1, 'bad', 3], material: {},
+        },
+      },
+    })!;
+    const field = repaired.contactHeightfields.terrain!;
+    expect(field.spacing).toBeGreaterThan(0);
+    expect(field.columns * field.rows).toBeLessThanOrEqual(MAX_HEIGHTFIELD_SAMPLES);
+    expect(field.heights).toHaveLength(field.columns * field.rows);
+    expect(field.heights[0]).toBe(1);
+    expect(field.heights[1]).toBeNull();
   });
 
   it('round-trips a healthy model unchanged', () => {

@@ -289,6 +289,26 @@ export type ContactPlane = {
   enabled: boolean;
 };
 
+/**
+ * A fixed Z-up surface sampled on a regular world-X/Y grid.
+ *
+ * Heights are row-major (`y * columns + x`). `null` marks no-data; any cell touching a
+ * no-data sample is deliberately non-contacting rather than inventing terrain across a hole.
+ */
+export type ContactHeightfield = {
+  id: string;
+  name: string;
+  /** World position of sample (column 0, row 0); Z is the height datum. */
+  origin: Vec3;
+  /** Uniform sample separation along world X and Y. */
+  spacing: number;
+  columns: number;
+  rows: number;
+  heights: (number | null)[];
+  material: ContactMaterial;
+  enabled: boolean;
+};
+
 // ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------

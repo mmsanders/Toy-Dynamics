@@ -1,4 +1,4 @@
-import type { Actuator, Body, ContactPlane, ContactSphere, Hinge, SimSettings, SpringDamper } from '../types';
+import type { Actuator, Body, ContactHeightfield, ContactPlane, ContactSphere, Hinge, SimSettings, SpringDamper } from '../types';
 import { buildSpec } from '../model/adapter';
 import { buildModel, type MultibodyModel } from '../dyn/model';
 import { makeDynamics, totalEnergy, type Dynamics } from '../dyn/forward';
@@ -31,6 +31,7 @@ export type RunInput = {
   springDampers?: Record<string, SpringDamper>;
   contactSpheres: Record<string, ContactSphere>;
   contactPlanes: Record<string, ContactPlane>;
+  contactHeightfields?: Record<string, ContactHeightfield>;
   settings: SimSettings;
 };
 
@@ -76,10 +77,17 @@ export type Run = {
 function isPassive(input: RunInput): boolean {
   const spheres = Object.values(input.contactSpheres).filter((sphere) => sphere.enabled);
   const planes = Object.values(input.contactPlanes).filter((plane) => plane.enabled);
+  const heightfields = Object.values(input.contactHeightfields ?? {}).filter((field) => field.enabled);
   for (const sphere of spheres) {
     for (const plane of planes) {
       if (Math.min(sphere.material.damping, plane.material.damping) > 0
           || Math.min(sphere.material.friction, plane.material.friction) > 0) return false;
+    }
+  }
+  for (const sphere of spheres) {
+    for (const field of heightfields) {
+      if (Math.min(sphere.material.damping, field.material.damping) > 0
+          || Math.min(sphere.material.friction, field.material.friction) > 0) return false;
     }
   }
   for (let i = 0; i < spheres.length; i++) {
@@ -106,7 +114,7 @@ function isPassive(input: RunInput): boolean {
 }
 
 export function createRun(input: RunInput): Run | { error: string } {
-  const built = buildSpec(input.bodies, input.hinges, input.actuators, input.settings, input.contactSpheres, input.contactPlanes, input.springDampers ?? {});
+  const built = buildSpec(input.bodies, input.hinges, input.actuators, input.settings, input.contactSpheres, input.contactPlanes, input.springDampers ?? {}, input.contactHeightfields ?? {});
   if (!built.ok) {
     return { error: built.problems[0]?.message ?? 'The model could not be assembled.' };
   }

@@ -8,7 +8,7 @@ import {
 import { type CrbaScratch, type Factorization, crba, factorize, makeCrbaScratch, makeFactorization, solveFactorized } from './crba';
 import { type RneaScratch, kineticEnergy, makeRneaScratch, rnea } from './rnea';
 import { type SV, type V3, sv, v3 } from './spatial';
-import { spherePlanePenetration } from './contact';
+import type { SurfaceQueryResult } from './contact';
 
 /**
  * Forward dynamics: from a state to its accelerations.
@@ -104,8 +104,8 @@ export type Dynamics = {
   springVelocityB: V3[];
   /** Scratch for a contact point expressed in link coordinates. */
   scratchP: V3;
-  /** Scratch for the unit contact normal a plane query writes back. */
-  contactNormal: V3;
+  /** Allocation-free result shared by every fixed-surface query. */
+  surfaceQuery: SurfaceQueryResult;
   /** Plane pairs first, then sphere pairs in stable nested-loop order. */
   activeContact: Uint8Array;
   contactSetInitialized: boolean;
@@ -114,7 +114,10 @@ export type Dynamics = {
 export function makeDynamics(model: MultibodyModel): Dynamics {
   const nv = model.nv;
   const sphereCount = model.contactSpheres.length;
-  const contactPairCount = sphereCount * model.contactPlanes.length + (sphereCount * (sphereCount - 1)) / 2;
+  const contactPairCount = sphereCount * model.contactSurfaces.length + (sphereCount * (sphereCount - 1)) / 2;
+  const surfaceNormal = v3();
+  const surfacePoint = v3();
+  const surfaceVelocity = v3();
   return {
     model,
     H: new Float64Array(nv * nv),
@@ -147,7 +150,7 @@ export function makeDynamics(model: MultibodyModel): Dynamics {
     springPositionB: model.springDampers.map(() => v3()),
     springVelocityB: model.springDampers.map(() => v3()),
     scratchP: v3(),
-    contactNormal: v3(),
+    surfaceQuery: { separation: 0, normal: surfaceNormal, point: surfacePoint, velocity: surfaceVelocity },
     activeContact: new Uint8Array(contactPairCount),
     contactSetInitialized: false,
   };
@@ -348,9 +351,9 @@ function addForceAtSphereSurface(
   addForceAtPoint(d, sphere.link, p, worldForce);
 }
 
-/** Detect and apply compliant sphere-plane and sphere-sphere contact. */
+/** Detect and apply compliant sphere-surface and sphere-sphere contact. */
 function applyContacts(d: Dynamics, settle: boolean): void {
-  const { contactSpheres: spheres, contactPlanes: planes } = d.model;
+  const { contactSpheres: spheres, contactSurfaces: surfaces } = d.model;
   if (spheres.length === 0) return;
   updateContactPoints(d);
   const refresh = settle || !d.contactSetInitialized;
@@ -361,34 +364,37 @@ function applyContacts(d: Dynamics, settle: boolean): void {
     const sphere = spheres[i]!;
     const position = d.spherePosition[i]!;
     const velocity = d.sphereVelocity[i]!;
-    for (const plane of planes) {
-      // The normal is a result, not a constant: on a bounded plate it tips over as the
-      // sphere passes an edge, so it has to come back from the query with the penetration.
-      const normal = d.contactNormal;
-      const penetration = spherePlanePenetration(
-        plane, position[0]!, position[1]!, position[2]!, sphere.radius, normal,
+    for (const surface of surfaces) {
+      const query = d.surfaceQuery;
+      const found = surface.querySphere(
+        position[0]!, position[1]!, position[2]!, sphere.radius, query,
       );
+      const penetration = found ? -query.separation : Number.NEGATIVE_INFINITY;
+      const normal = query.normal;
       const nx = normal[0]!, ny = normal[1]!, nz = normal[2]!;
-      if (refresh) d.activeContact[pair] = penetration > 0 ? 1 : 0;
-      if (d.activeContact[pair]) {
-        // The closing speed is the centre's along the normal; the spin adds nothing there.
-        const normalSpeed = nx * velocity[0]! + ny * velocity[1]! + nz * velocity[2]!;
-        const stiffness = Math.min(sphere.stiffness, plane.stiffness);
-        const damping = Math.min(sphere.damping, plane.damping);
+      if (refresh) d.activeContact[pair] = found && penetration > 0 ? 1 : 0;
+      if (d.activeContact[pair] && found) {
+        const relativeX = velocity[0]! - query.velocity[0]!;
+        const relativeY = velocity[1]! - query.velocity[1]!;
+        const relativeZ = velocity[2]! - query.velocity[2]!;
+        // The closing speed is the centre's relative speed along the normal; spin adds none.
+        const normalSpeed = nx * relativeX + ny * relativeY + nz * relativeZ;
+        const stiffness = Math.min(sphere.stiffness, surface.stiffness);
+        const damping = Math.min(sphere.damping, surface.damping);
         const magnitude = Math.max(0, stiffness * Math.max(0, penetration) - damping * Math.min(0, normalSpeed));
         // Slip is measured at the surface point, a radius below the centre: v + ω × (−r n).
         const ox = -sphere.radius * nx, oy = -sphere.radius * ny, oz = -sphere.radius * nz;
         const w = d.sphereAngularVelocity[i]!;
-        const sx = velocity[0]! + (w[1]! * oz - w[2]! * oy);
-        const sy = velocity[1]! + (w[2]! * ox - w[0]! * oz);
-        const sz = velocity[2]! + (w[0]! * oy - w[1]! * ox);
+        const sx = relativeX + (w[1]! * oz - w[2]! * oy);
+        const sy = relativeY + (w[2]! * ox - w[0]! * oz);
+        const sz = relativeZ + (w[0]! * oy - w[1]! * ox);
         const tx = sx - nx * normalSpeed;
         const ty = sy - ny * normalSpeed;
         const tz = sz - nz * normalSpeed;
         const slip = Math.hypot(tx, ty, tz);
-        const friction = Math.min(sphere.friction, plane.friction);
+        const friction = Math.min(sphere.friction, surface.friction);
         const frictionScale = slip > 0
-          ? -friction * magnitude * Math.tanh(slip / Math.min(sphere.frictionVelocity, plane.frictionVelocity)) / slip
+          ? -friction * magnitude * Math.tanh(slip / Math.min(sphere.frictionVelocity, surface.frictionVelocity)) / slip
           : 0;
         force[0] = nx * magnitude + tx * frictionScale;
         force[1] = ny * magnitude + ty * frictionScale;
@@ -448,7 +454,7 @@ function applyContacts(d: Dynamics, settle: boolean): void {
 
 /** Elastic energy stored by the compliant normal springs at the current configuration. */
 function contactPotentialEnergy(d: Dynamics): number {
-  const { contactSpheres: spheres, contactPlanes: planes } = d.model;
+  const { contactSpheres: spheres, contactSurfaces: surfaces } = d.model;
   if (spheres.length === 0) return 0;
   updateContactPoints(d);
   let energy = 0;
@@ -456,11 +462,10 @@ function contactPotentialEnergy(d: Dynamics): number {
   for (let i = 0; i < spheres.length; i++) {
     const sphere = spheres[i]!;
     const position = d.spherePosition[i]!;
-    for (const plane of planes) {
-      const penetration = Math.max(0, spherePlanePenetration(
-        plane, position[0]!, position[1]!, position[2]!, sphere.radius, d.contactNormal,
-      ));
-      energy += 0.5 * Math.min(sphere.stiffness, plane.stiffness) * penetration * penetration;
+    for (const surface of surfaces) {
+      if (!surface.querySphere(position[0]!, position[1]!, position[2]!, sphere.radius, d.surfaceQuery)) continue;
+      const penetration = Math.max(0, -d.surfaceQuery.separation);
+      energy += 0.5 * Math.min(sphere.stiffness, surface.stiffness) * penetration * penetration;
     }
   }
 

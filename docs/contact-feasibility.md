@@ -13,7 +13,14 @@ Phases 1–3 are now complete for the main analytical-contact milestone. Regular
 friction has authorable Coulomb coefficients and velocity scales, pairwise material
 combination, persistence, diagnostics, passive-run classification, and integrated dissipation
 coverage. Diagnostics also flag likely discrete-contact tunnelling from initial sphere speed.
-Static sticking and Phase 4 heightfields remain intentionally out of scope.
+Phase 4's basic in-memory heightfield is now implemented too. Planes and heightfields share an
+allocation-free surface query returning separation, normal, point, and surface velocity.
+Regular grids support bilinear height/gradient sampling, inclusive outer edges, explicit
+no-contact beyond the footprint or across no-data cells, pasted and procedural authoring,
+scene meshes, repaired local persistence, compact share links, and a 4096-sample limit.
+Tests cover flat and constant-slope equivalence, cell boundaries, holes/out-of-bounds, and an
+integrated sphere crossing a smooth hill. Triangle-cell closest-point contact and external
+DEM/file import remain intentionally separate future work.
 
 Two things have since changed shape. Sliding friction acts at the sphere's *surface* point
 rather than its centre, so a finite-radius sphere spins up and rolls instead of skidding.
@@ -202,8 +209,9 @@ that the sphere radius should not greatly exceed the grid spacing.
 
 Robust finite-radius sphere/heightfield contact would require searching overlapping cells and
 finding the closest point on their triangles (or another bounded surface representation).
-That is a separate medium-sized feature, as are holes/no-data values, coordinate reference
-systems, huge raster streaming, and file parsing. None should block planes.
+That is a separate medium-sized feature, as are coordinate reference systems, huge raster
+streaming, and file parsing. Basic no-data cells are supported by omitting any bilinear cell
+that touches a missing sample.
 
 Recommended DEM scope:
 
@@ -276,6 +284,9 @@ when no contact geometry exists.
   runner change and should not be implied by the initial feature.
 
 ### Phase 4 — optional heightfield
+
+**Implemented for the basic in-memory scope.** External files and triangle-cell closest-point
+contact remain follow-ons, not incomplete items in this phase.
 
 - Introduce the surface-query interface and an in-memory regular height grid.
 - Add bilinear height/gradient sampling, edge/no-data behavior, visualization, repair, and

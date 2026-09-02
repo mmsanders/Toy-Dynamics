@@ -1,5 +1,5 @@
-import { GROUND_ID, type Actuator, type Body, type ContactPlane, type ContactSphere, type Hinge, type Profile, type SimSettings, type SpringDamper } from '../types';
-import type { ActuatorSpec, BodySpec, DofParams, HingeSpec, ModelSpec, SpringDamperSpec } from '../dyn/model';
+import { GROUND_ID, type Actuator, type Body, type ContactHeightfield, type ContactPlane, type ContactSphere, type Hinge, type Profile, type SimSettings, type SpringDamper } from '../types';
+import type { ActuatorSpec, BodySpec, ContactHeightfieldSpec, DofParams, HingeSpec, ModelSpec, SpringDamperSpec } from '../dyn/model';
 import { compileExpr } from '../dyn/expr';
 import { orderHingeIds } from './topology';
 
@@ -102,6 +102,7 @@ export function buildSpec(
   contactSpheres: Record<string, ContactSphere> = {},
   contactPlanes: Record<string, ContactPlane> = {},
   springDampers: Record<string, SpringDamper> = {},
+  contactHeightfields: Record<string, ContactHeightfield> = {},
 ): BuildResult {
   const problems: BuildProblem[] = [];
 
@@ -260,6 +261,18 @@ export function buildSpec(
       material: { ...plane.material },
     }));
 
+  const heightfieldSpecs: ContactHeightfieldSpec[] = Object.values(contactHeightfields)
+    .filter((field) => field.enabled)
+    .map((field) => ({
+      name: field.name,
+      origin: [...field.origin],
+      spacing: field.spacing,
+      columns: field.columns,
+      rows: field.rows,
+      heights: [...field.heights],
+      material: { ...field.material },
+    }));
+
   const springDamperSpecs: SpringDamperSpec[] = [];
   for (const device of Object.values(springDampers)) {
     if (!device.enabled) continue;
@@ -316,6 +329,7 @@ export function buildSpec(
       springDampers: springDamperSpecs,
       contactSpheres: sphereSpecs,
       contactPlanes: planeSpecs,
+      contactHeightfields: heightfieldSpecs,
       gravity: settings.gravity,
     },
     bodyIndex,

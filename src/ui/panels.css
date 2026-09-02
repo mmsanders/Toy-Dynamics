@@ -159,6 +159,24 @@
   font-size: 14px;
 }
 
+.height-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.height-grid textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  padding: 8px 10px;
+  background: var(--panel-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: 12px/1.45 var(--mono);
+}
+
 .picker__select {
   min-height: var(--tap);
   width: 100%;

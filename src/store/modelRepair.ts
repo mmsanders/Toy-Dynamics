@@ -5,6 +5,7 @@ import {
   type Conventions,
   type ContactPlane,
   type ContactSphere,
+  type ContactHeightfield,
   type DofSpec,
   type Hinge,
   type Inertia,
@@ -27,6 +28,7 @@ import {
   SPRING_DAMPER_COLORS,
 } from './defaults';
 import { wouldCreateCycle } from '../model/topology';
+import { MAX_HEIGHTFIELD_AXIS, MAX_HEIGHTFIELD_SAMPLES } from '../dyn/contact';
 
 /**
  * Repairing a persisted or shared model.
@@ -55,6 +57,8 @@ export type ModelPersisted = {
   contactSphereOrder: string[];
   contactPlanes: Record<string, ContactPlane>;
   contactPlaneOrder: string[];
+  contactHeightfields: Record<string, ContactHeightfield>;
+  contactHeightfieldOrder: string[];
   settings: SimSettings;
   conventions: Conventions;
   selectedBodyId: string;
@@ -474,6 +478,45 @@ export function repairModel(value: unknown): ModelPersisted | null {
     : [];
   for (const id of Object.keys(contactPlanes)) if (!contactPlaneOrder.includes(id)) contactPlaneOrder.push(id);
 
+  const contactHeightfields: Record<string, ContactHeightfield> = {};
+  const rawHeightfields = isObject(value.contactHeightfields) ? value.contactHeightfields : {};
+  for (const [id, raw] of Object.entries(rawHeightfields)) {
+    if (!isObject(raw)) continue;
+    const material = isObject(raw.material) ? raw.material : {};
+    const columns = Math.min(MAX_HEIGHTFIELD_AXIS, Math.max(2, Math.trunc(num(raw.columns, 2))));
+    const rows = Math.min(
+      MAX_HEIGHTFIELD_AXIS,
+      Math.max(2, Math.min(Math.trunc(num(raw.rows, 2)), Math.floor(MAX_HEIGHTFIELD_SAMPLES / columns))),
+    );
+    const source = Array.isArray(raw.heights) ? raw.heights : [];
+    const heights = Array.from({ length: columns * rows }, (_, index): number | null => {
+      const height = source[index];
+      return typeof height === 'number' && Number.isFinite(height) ? height : null;
+    });
+    contactHeightfields[id] = {
+      id,
+      name: str(raw.name, `Heightfield ${Object.keys(contactHeightfields).length + 1}`),
+      origin: vec3(raw.origin),
+      spacing: Math.max(Number.EPSILON, num(raw.spacing, 1)),
+      columns,
+      rows,
+      heights,
+      material: {
+        stiffness: Math.max(0, num(material.stiffness, 1000)),
+        damping: Math.max(0, num(material.damping, 10)),
+        friction: Math.max(0, num(material.friction, 0)),
+        frictionVelocity: Math.max(Number.EPSILON, num(material.frictionVelocity, 0.01)),
+      },
+      enabled: bool(raw.enabled, true),
+    };
+  }
+  const contactHeightfieldOrder = Array.isArray(value.contactHeightfieldOrder)
+    ? value.contactHeightfieldOrder.filter((id): id is string => typeof id === 'string' && id in contactHeightfields)
+    : [];
+  for (const id of Object.keys(contactHeightfields)) {
+    if (!contactHeightfieldOrder.includes(id)) contactHeightfieldOrder.push(id);
+  }
+
   const selectedBodyId =
     typeof value.selectedBodyId === 'string' && bodies[value.selectedBodyId]
       ? value.selectedBodyId
@@ -492,6 +535,8 @@ export function repairModel(value: unknown): ModelPersisted | null {
     contactSphereOrder,
     contactPlanes,
     contactPlaneOrder,
+    contactHeightfields,
+    contactHeightfieldOrder,
     settings: repairSettings(value.settings),
     conventions: repairConventions(value.conventions),
     selectedBodyId,

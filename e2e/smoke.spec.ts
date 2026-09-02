@@ -46,6 +46,24 @@ test('adds and edits a passive two-node device', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test('adds and authors a procedural heightfield', async ({ page }) => {
+  const errors = await openApp(page);
+  await page.getByRole('tab', { name: 'Contact' }).click();
+  await page.getByRole('button', { name: 'Add a heightfield' }).click();
+  await expect(page.getByText('Heightfield 1').first()).toBeVisible();
+
+  const spacing = page.getByRole('textbox', { name: 'Sample spacing' });
+  await spacing.fill('0.25');
+  await spacing.press('Enter');
+  await expect(spacing).toHaveValue('0.25');
+
+  await page.getByRole('button', { name: 'Hill', exact: true }).click();
+  const samples = page.getByRole('textbox', { name: 'Height samples' });
+  await expect(samples).toHaveValue(/1/);
+  await expect(page.getByText(/bilinear and continuous across cells/)).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test('computes a trajectory in the worker and reports it', async ({ page }) => {
   const errors = await openApp(page);
   await page.getByRole('tab', { name: 'Run' }).click();
