@@ -4,7 +4,7 @@ import { useModelStore } from '../store/useModelStore';
 import { unitLabel } from '../units';
 import { AXIS_COLORS } from '../theme';
 import { NumberField } from './NumberField';
-import { EmptyState, IconButton, ListRow, Note, Picker, Section, TextField } from './Bits';
+import { EmptyState, IconButton, ListRow, Note, Picker, Section, TextField, Toggle } from './Bits';
 
 type Selection = { kind: 'sphere' | 'plane'; id: string } | null;
 
@@ -46,7 +46,7 @@ export function ContactPanel() {
         {planeOrder.map((id) => {
           const entry = planes[id];
           if (!entry) return null;
-          return <ListRow key={id} label={entry.name} detail={`n [${entry.normal.join(', ')}]`} active={selected?.kind === 'plane' && selected.id === id} onSelect={() => setSelected({ kind: 'plane', id })} actions={<><IconButton label={entry.enabled ? 'Disable' : 'Enable'} active={!entry.enabled} onClick={() => setPlane(id, { enabled: !entry.enabled })}>{entry.enabled ? '◉' : '○'}</IconButton><IconButton label="Delete" danger onClick={() => removePlane(id)}>×</IconButton></>} />;
+          return <ListRow key={id} label={entry.name} detail={`n [${entry.normal.join(', ')}] · ${entry.bounded ? `${entry.size} wide` : 'unbounded'}`} active={selected?.kind === 'plane' && selected.id === id} onSelect={() => setSelected({ kind: 'plane', id })} actions={<><IconButton label={entry.enabled ? 'Disable' : 'Enable'} active={!entry.enabled} onClick={() => setPlane(id, { enabled: !entry.enabled })}>{entry.enabled ? '◉' : '○'}</IconButton><IconButton label="Delete" danger onClick={() => removePlane(id)}>×</IconButton></>} />;
         })}
       </Section>
 
@@ -66,8 +66,14 @@ export function ContactPanel() {
           <TextField label="Name" value={plane.name} onChange={(name) => setPlane(plane.id, { name })} />
           <VectorEditor label="Point" value={plane.point} unit={lengthUnit} onChange={(point) => setPlane(plane.id, { point })} />
           <VectorEditor label="Allowed-side normal" value={plane.normal} onChange={(normal) => setPlane(plane.id, { normal })} />
-          <NumberField label="Display size" value={plane.size} onChange={(size) => setPlane(plane.id, { size: Math.max(0.01, size) })} min={0.1} max={20} step={0.1} unit={lengthUnit} />
-          <Note>The size controls only the square drawn in the scene; analytical contact extends infinitely. The normal is normalized by the solver and points toward the allowed side.</Note>
+          <Toggle
+            label="Finite plate"
+            checked={plane.bounded}
+            onChange={(bounded) => setPlane(plane.id, { bounded })}
+            hint={plane.bounded ? 'Contact stops at the drawn edge' : 'Contact extends forever; the square is only what is drawn'}
+          />
+          <NumberField label="Size" value={plane.size} onChange={(size) => setPlane(plane.id, { size: Math.max(0.01, size) })} min={0.1} max={20} step={0.1} unit={lengthUnit} />
+          <Note>The arrow in the scene points to the allowed side; the solver normalizes the normal for you. A finite plate is solid out to its edge and nothing past it, so a sphere rolling off one tips over the rim and falls. An unbounded plane ignores the size entirely except for drawing.</Note>
         </Section>
         <MaterialEditor material={plane.material} onChange={(patch) => setMaterial('plane', plane.id, patch)} />
       </>}

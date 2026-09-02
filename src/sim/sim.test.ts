@@ -47,7 +47,7 @@ describe('trajectory runner', () => {
     };
     input.contactPlanes = {
       wall: { id: 'wall', name: 'Wall', point: [0.1, 0, 0], normal: [1, 0, 0],
-        size: 4,
+        size: 4, bounded: false,
         material: { stiffness: 1000, damping: 20, friction: 0, frictionVelocity: 0.01 }, enabled: true },
     };
 
@@ -73,7 +73,7 @@ describe('trajectory runner', () => {
     };
     input.contactPlanes = {
       wall: { id: 'wall', name: 'Wall', point: [-10, 0, 0], normal: [1, 0, 0],
-        size: 4,
+        size: 4, bounded: false,
         material: { stiffness: 1000, damping: 0, friction: 0, frictionVelocity: 0.01 }, enabled: true },
     };
     expect(complete(input).meta.passive).toBe(true);

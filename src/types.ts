@@ -278,8 +278,13 @@ export type ContactPlane = {
   name: string;
   point: Vec3;
   normal: Vec3;
-  /** Width of the square scene patch. Contact remains an infinite analytical plane. */
+  /** Side length of the square patch, centred on `point`. Always what the scene draws. */
   size: number;
+  /**
+   * True for a finite plate, whose edges the solver honours — a ball can roll off one.
+   * False for an unbounded plane, where `size` is only how much of it to draw.
+   */
+  bounded: boolean;
   material: ContactMaterial;
   enabled: boolean;
 };

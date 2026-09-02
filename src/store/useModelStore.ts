@@ -877,6 +877,8 @@ export const useModelStore = create<ModelState>()(
             point: [0, 0, -2],
             normal: [0, 0, 1],
             size: 4,
+            // What you see is what you hit. An unbounded ground plane is one toggle away.
+            bounded: true,
             material: { stiffness: 10000, damping: 100, friction: 0, frictionVelocity: 0.01 },
             enabled: true,
           };

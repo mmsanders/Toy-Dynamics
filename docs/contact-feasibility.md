@@ -15,6 +15,13 @@ combination, persistence, diagnostics, passive-run classification, and integrate
 coverage. Diagnostics also flag likely discrete-contact tunnelling from initial sphere speed.
 Static sticking and Phase 4 heightfields remain intentionally out of scope.
 
+Two things have since changed shape. Sliding friction acts at the sphere's *surface* point
+rather than its centre, so a finite-radius sphere spins up and rolls instead of skidding.
+And a plane may now be a **finite plate**: its stored size is authored geometry rather than a
+drawing hint, and a centre hanging past an edge contacts the nearest point of the rim, so
+support fades over the edge instead of ending at an invisible step. Over the plate the law is
+unchanged, and a plane left unbounded behaves exactly as before.
+
 ## Decision
 
 Simple contact is feasible without replacing the reduced-coordinate tree solver. The first

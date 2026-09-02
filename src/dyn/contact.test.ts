@@ -240,6 +240,78 @@ describe('analytical compliant contact', () => {
     expect(qdd[6]).toBeCloseTo(20, 9);
   });
 
+  // A bounded plate is a square patch centred on its point. For a +Z normal the shared
+  // basis is the ordinary X/Y pair, so a plate of size 2 covers x, y in [-1, 1].
+  const plate = (bounded: boolean, centre: number[], radius = 0.5): ModelSpec => ({
+    bodies: [bodySpec()],
+    hinges: [hingeSpec({ free: [...MASK.free], values: [centre[0]!, centre[1]!, centre[2]!, 0, 0, 0] })],
+    contactSpheres: [{ name: 'Ball', body: 0, point: [0, 0, 0], radius, material }],
+    contactPlanes: [{ name: 'Plate', point: [0, 0, 0], normal: [0, 0, 1], size: 2, bounded, material }],
+    gravity: [0, 0, 0],
+  });
+
+  it('is unchanged by bounding a plane while the sphere is over it', () => {
+    const over = [0.4, -0.2, 0.3];
+    const bounded = acceleration(plate(true, over));
+    const unbounded = acceleration(plate(false, over));
+    expect(bounded[2]).toBeCloseTo(20, 12);
+    expect([...bounded]).toEqual([...unbounded]);
+  });
+
+  it('lets a sphere past the edge of a plate fall through where it has ended', () => {
+    // Far enough past the rim that no part of the sphere is over the plate any more.
+    const past = [1.8, 0, 0.3];
+    expect(acceleration(plate(true, past))[2]).toBe(0);
+    // The same sphere against an unbounded plane is still firmly in contact, which is the
+    // whole difference between the two.
+    expect(acceleration(plate(false, past))[2]).toBeCloseTo(20, 12);
+  });
+
+  it('pushes a sphere overhanging an edge outwards as well as up', () => {
+    // Centre 0.3 past the rim and 0.3 above the face, so the nearest point of the plate is
+    // the rim itself and the normal is the diagonal between the two.
+    const qdd = acceleration(plate(true, [1.3, 0, 0.3]));
+    const reach = Math.hypot(0.3, 0.3);
+    const push = material.stiffness * (0.5 - reach) / Math.SQRT2;
+    expect(qdd[0]).toBeCloseTo(push, 9);
+    expect(qdd[2]).toBeCloseTo(push, 9);
+    // The force still runs through the centre, so an overhang alone imparts no spin.
+    expect(qdd[4]).toBeCloseTo(0, 12);
+  });
+
+  it('rolls a ball off the end of a plate and drops it', () => {
+    const plateMaterial: ContactMaterialSpec = { stiffness: STIFFNESS, damping: 50, friction: 0.5, frictionVelocity: 0.01 };
+    const model = buildModel({
+      bodies: [bodySpec({ mass: MASS, inertia: { ixx: SOLID_SPHERE, iyy: SOLID_SPHERE, izz: SOLID_SPHERE, ixy: 0, ixz: 0, iyz: 0 } })],
+      hinges: [hingeSpec({
+        free: [...MASK.free],
+        values: [0.2, 0, RADIUS - MASS * GRAVITY / STIFFNESS, 0, 0, 0],
+        rates: [1, 0, 0, 0, 0, 0],
+      })],
+      contactSpheres: [{ name: 'Ball', body: 0, point: [0, 0, 0], radius: RADIUS, material: plateMaterial }],
+      contactPlanes: [{ name: 'Plate', point: [0, 0, 0], normal: [0, 0, 1], size: 2, bounded: true, material: plateMaterial }],
+      gravity: [0, 0, -GRAVITY],
+    });
+    const dynamics = makeDynamics(model);
+    const state = { q: Float64Array.from(model.q0), v: Float64Array.from(model.v0) };
+    const scratch = makeStepScratch(model);
+    const dt = 1e-4;
+
+    let lowestWhileOn = Infinity;
+    for (let i = 0; i < 1.6 / dt; i++) {
+      expect(step(dynamics, state, i * dt, dt, 'rk4', scratch)).toBe(true);
+      // While it is still on the plate it stays on top of it, to within the penetration a
+      // compliant contact allows.
+      if (state.q[0]! < 1 - RADIUS) lowestWhileOn = Math.min(lowestWhileOn, state.q[2]!);
+    }
+    expect(lowestWhileOn).toBeGreaterThan(RADIUS - 10 * MASS * GRAVITY / STIFFNESS);
+
+    // Past the end there is nothing left to hold it up.
+    expect(state.q[0]).toBeGreaterThan(1.2);
+    expect(state.q[2]).toBeLessThan(-0.5);
+    expect(state.v[2]).toBeLessThan(-1);
+  });
+
   it('freezes contact activation across Runge-Kutta stages', () => {
     const spec: ModelSpec = {
       bodies: [bodySpec()],
