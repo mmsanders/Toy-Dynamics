@@ -8,6 +8,7 @@ import {
 import { type CrbaScratch, type Factorization, crba, factorize, makeCrbaScratch, makeFactorization, solveFactorized } from './crba';
 import { type RneaScratch, kineticEnergy, makeRneaScratch, rnea } from './rnea';
 import { type SV, type V3, sv, v3 } from './spatial';
+import { spherePlanePenetration } from './contact';
 
 /**
  * Forward dynamics: from a state to its accelerations.
@@ -103,6 +104,8 @@ export type Dynamics = {
   springVelocityB: V3[];
   /** Scratch for a contact point expressed in link coordinates. */
   scratchP: V3;
+  /** Scratch for the unit contact normal a plane query writes back. */
+  contactNormal: V3;
   /** Plane pairs first, then sphere pairs in stable nested-loop order. */
   activeContact: Uint8Array;
   contactSetInitialized: boolean;
@@ -144,6 +147,7 @@ export function makeDynamics(model: MultibodyModel): Dynamics {
     springPositionB: model.springDampers.map(() => v3()),
     springVelocityB: model.springDampers.map(() => v3()),
     scratchP: v3(),
+    contactNormal: v3(),
     activeContact: new Uint8Array(contactPairCount),
     contactSetInitialized: false,
   };
@@ -358,11 +362,13 @@ function applyContacts(d: Dynamics, settle: boolean): void {
     const position = d.spherePosition[i]!;
     const velocity = d.sphereVelocity[i]!;
     for (const plane of planes) {
-      const nx = plane.normal[0]!, ny = plane.normal[1]!, nz = plane.normal[2]!;
-      const distance = nx * (position[0]! - plane.point[0]!)
-        + ny * (position[1]! - plane.point[1]!)
-        + nz * (position[2]! - plane.point[2]!);
-      const penetration = sphere.radius - distance;
+      // The normal is a result, not a constant: on a bounded plate it tips over as the
+      // sphere passes an edge, so it has to come back from the query with the penetration.
+      const normal = d.contactNormal;
+      const penetration = spherePlanePenetration(
+        plane, position[0]!, position[1]!, position[2]!, sphere.radius, normal,
+      );
+      const nx = normal[0]!, ny = normal[1]!, nz = normal[2]!;
       if (refresh) d.activeContact[pair] = penetration > 0 ? 1 : 0;
       if (d.activeContact[pair]) {
         // The closing speed is the centre's along the normal; the spin adds nothing there.
@@ -451,10 +457,9 @@ function contactPotentialEnergy(d: Dynamics): number {
     const sphere = spheres[i]!;
     const position = d.spherePosition[i]!;
     for (const plane of planes) {
-      const distance = plane.normal[0]! * (position[0]! - plane.point[0]!)
-        + plane.normal[1]! * (position[1]! - plane.point[1]!)
-        + plane.normal[2]! * (position[2]! - plane.point[2]!);
-      const penetration = Math.max(0, sphere.radius - distance);
+      const penetration = Math.max(0, spherePlanePenetration(
+        plane, position[0]!, position[1]!, position[2]!, sphere.radius, d.contactNormal,
+      ));
       energy += 0.5 * Math.min(sphere.stiffness, plane.stiffness) * penetration * penetration;
     }
   }

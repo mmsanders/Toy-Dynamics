@@ -457,6 +457,9 @@ export function repairModel(value: unknown): ModelPersisted | null {
       point: vec3(raw.point),
       normal,
       size: Math.max(0.01, num(raw.size, 4)),
+      // Absent means a model saved before plates had edges, where `size` was only a
+      // drawing hint. Defaulting it to false keeps such a model behaving as it did.
+      bounded: bool(raw.bounded, false),
       material: {
         stiffness: Math.max(0, num(material.stiffness, 1000)),
         damping: Math.max(0, num(material.damping, 10)),

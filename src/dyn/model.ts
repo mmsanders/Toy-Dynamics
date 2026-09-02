@@ -17,6 +17,7 @@ import {
   v3,
 } from './spatial';
 import { buildInertia, type InertiaInput } from './inertia';
+import { planeBasis } from './contact';
 import {
   type JointModel,
   type JointWorkspace,
@@ -166,6 +167,10 @@ export type ContactPlaneSpec = {
   point: readonly number[];
   normal: readonly number[];
   material: ContactMaterialSpec;
+  /** Side length of the square plate, centred on `point`. Only used when `bounded`. */
+  size?: number;
+  /** True for a finite plate with edges; false for an unbounded plane. */
+  bounded?: boolean;
 };
 
 export type ModelSpec = {
@@ -229,6 +234,13 @@ export type CompiledContactPlane = {
   point: V3;
   /** Unit world normal pointing into the allowed half-space. */
   normal: V3;
+  /** In-plane axes, from `planeBasis`, that the plate is measured and drawn along. */
+  tangentU: V3;
+  tangentV: V3;
+  /** Half the plate's side length. Meaningless when `bounded` is false. */
+  halfSize: number;
+  /** False for an unbounded plane, which has no edges to fall off. */
+  bounded: boolean;
   stiffness: number;
   damping: number;
   friction: number;
@@ -486,10 +498,21 @@ function compileContactPlanes(spec: ModelSpec): CompiledContactPlane[] {
     const nz = plane.normal[2] ?? 0;
     const length = Math.hypot(nx, ny, nz);
     if (!(length > 0) || !Number.isFinite(length)) continue;
+    const normal = v3(nx / length, ny / length, nz / length);
+    const tangentU = v3();
+    const tangentV = v3();
+    planeBasis(normal, tangentU, tangentV);
+    const size = Math.max(0, plane.size ?? 0);
     out.push({
       name: plane.name,
       point: v3(plane.point[0] ?? 0, plane.point[1] ?? 0, plane.point[2] ?? 0),
-      normal: v3(nx / length, ny / length, nz / length),
+      normal,
+      tangentU,
+      tangentV,
+      halfSize: size / 2,
+      // A plate with no size would be a plane nothing can ever touch, which is never what
+      // anyone meant; it stays unbounded instead.
+      bounded: plane.bounded === true && size > 0,
       stiffness: Math.max(0, plane.material.stiffness),
       damping: Math.max(0, plane.material.damping),
       friction: Math.max(0, plane.material.friction ?? 0),

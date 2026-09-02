@@ -255,6 +255,8 @@ export function buildSpec(
       name: plane.name,
       point: [...plane.point],
       normal: [...plane.normal],
+      size: plane.size,
+      bounded: plane.bounded,
       material: { ...plane.material },
     }));
 

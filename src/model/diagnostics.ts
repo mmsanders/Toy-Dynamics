@@ -8,6 +8,7 @@ import { makeJointModel, rotationalAxisSeparation } from '../dyn/joints';
 import { buildSpec } from './adapter';
 import { DOF_LABELS } from '../types';
 import { m3, v3 } from '../dyn/spatial';
+import { spherePlanePenetration } from '../dyn/contact';
 import {
   STANDARD_GRAVITY_IMPERIAL,
   STANDARD_GRAVITY_SI,
@@ -389,6 +390,7 @@ export function runDiagnostics(
       const spherePositions = model.contactSpheres.map((sphere) =>
         pointToWorld(model.links[sphere.link]!, sphere.point, v3(), m3()),
       );
+      const contactNormal = v3();
 
       // Discrete contact only samples geometry at step boundaries. Warn when an initially
       // moving finite-radius sphere can travel a substantial fraction of its radius in one
@@ -433,16 +435,17 @@ export function runDiagnostics(
         const sphere = model.contactSpheres[i]!;
         const position = spherePositions[i]!;
         for (const plane of model.contactPlanes) {
-          const separation =
-            plane.normal[0]! * (position[0]! - plane.point[0]!) +
-            plane.normal[1]! * (position[1]! - plane.point[1]!) +
-            plane.normal[2]! * (position[2]! - plane.point[2]!) - sphere.radius;
-          if (separation < 0) {
+          // The solver's own geometry, so a bounded plate the sphere is nowhere near does
+          // not get reported as an overlap.
+          const penetration = spherePlanePenetration(
+            plane, position[0]!, position[1]!, position[2]!, sphere.radius, contactNormal,
+          );
+          if (penetration > 0) {
             out.push({
               id: `contact-overlap:plane:${i}:${plane.name}`,
               severity: 'warning',
               title: `${sphere.name} starts inside ${plane.name}`,
-              detail: `Initial penetration is ${formatNumber(-separation)} ${lengthUnit}, so the contact spring is already loaded at t = 0.`,
+              detail: `Initial penetration is ${formatNumber(penetration)} ${lengthUnit}, so the contact spring is already loaded at t = 0.`,
             });
           }
         }

@@ -18,8 +18,11 @@ also see when it has stopped being trustworthy, so a large part of it is devoted
 
 Contact is deliberately simple: body-fixed **spheres** against fixed **world planes** and
 against each other, with a compliant (penalty) normal force and regularized sliding friction.
-Bodies have no other shape, so anything that is not a sphere passes through everything. There
-is no rigid non-penetration, no static sticking and no swept collision detection; the
+A plane is either unbounded or a **finite plate** whose edges are real — a ball can roll along
+one, tip over the rim and fall off — and the square drawn in the scene is exactly the square
+that stops it. An arrow marks which side is solid. Bodies have no other shape, so anything
+that is not a sphere passes through everything. There is no rigid non-penetration, no static
+sticking and no swept collision detection; the
 [contact development plan](docs/contact-feasibility.md) spells out what was chosen and why.
 
 ## The model
@@ -203,6 +206,10 @@ computing the same quantity a different way:
 - closed-form motion for a prismatic joint under constant force, and `√(k/m)` for a spring;
 - a stuck joint holding a sub-breakaway load with *bit-exact* zero motion, breaking free at
   the threshold, and a sliding joint coming to rest at the closed-form `v₀²/(2a)`;
+- a sliding sphere spinning up to roll at `5/7 v₀` and a spun one launching itself at
+  `2/7 ω₀r`, which are the closed forms only if contact friction acts at the surface;
+- a ball rolling off the end of a finite plate, and a plate's interior being bit-identical to
+  the unbounded plane it came from;
 - the same body entered CoM-relative and origin-relative producing identical motion;
 - the mass matrix from CRBA against inverse dynamics, column by column;
 - `F = ma` and `τ = Iα` for actuators, and a body-fixed thruster's cycloid against its closed

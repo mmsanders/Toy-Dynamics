@@ -81,8 +81,8 @@ type EncodedModel = {
   sd?: EncodedSpringDamper[];
   /** `[name, body, node, radius, stiffness, damping, enabled, friction?, frictionVelocity?]`. */
   cs?: [string, number, number, number, number, number, 0 | 1, number?, number?][];
-  /** `[name, point, normal, stiffness, damping, enabled, displaySize?, friction?, frictionVelocity?]`. */
-  cp?: [string, number[], number[], number, number, 0 | 1, number?, number?, number?][];
+  /** `[name, point, normal, stiffness, damping, enabled, size?, friction?, frictionVelocity?, bounded?]`. */
+  cp?: [string, number[], number[], number, number, 0 | 1, number?, number?, number?, (0 | 1)?][];
   /** `[units, gx, gy, gz, dt, duration, integrator, sampleRate]`. */
   s: [string, number, number, number, number, number, string, number];
   /** `[upAxis, eulerOrder, rotationMode, angleUnit]`. */
@@ -224,7 +224,8 @@ export function encodeModel(model: ModelPersisted): string {
       if (!plane) return [];
       return [[plane.name, roundAll(plane.point), roundAll(plane.normal),
         round(plane.material.stiffness), round(plane.material.damping), plane.enabled ? 1 : 0,
-        round(plane.size), round(plane.material.friction), round(plane.material.frictionVelocity)]];
+        round(plane.size), round(plane.material.friction), round(plane.material.frictionVelocity),
+        plane.bounded ? 1 : 0]];
     }),
     s: [
       model.settings.units,
@@ -435,6 +436,9 @@ export function decodeModel(encoded: string): ModelPersisted | null {
       name: plane?.[0], point: plane?.[1], normal: plane?.[2],
       material: { stiffness: plane?.[3], damping: plane?.[4], friction: plane?.[7], frictionVelocity: plane?.[8] }, enabled: plane?.[5] !== 0,
       size: plane?.[6],
+      // A link written before plates had edges carries no flag, and repair reads that as
+      // unbounded — the behaviour that link was made with.
+      bounded: plane?.[9] === 1,
     };
   });
 
