@@ -65,9 +65,10 @@ test('draws the time-history plots with a legend and a unit', async ({ page }) =
   await page.getByRole('tab', { name: 'Run' }).click();
   await expect(page.locator('.plot').first()).toBeVisible({ timeout: 30_000 });
 
-  await expect(page.getByText('Linear velocity · Upper Arm', { exact: true })).toBeVisible();
-  await expect(page.getByText('Linear acceleration · Upper Arm', { exact: true })).toBeVisible();
-  await expect(page.getByText('Angular acceleration · Upper Arm', { exact: true })).toBeVisible();
+  // Scope to chart captions: the readout headings reuse the same metric names.
+  await expect(page.locator('.plot__title').filter({ hasText: 'Linear velocity · Upper Arm' })).toBeVisible();
+  await expect(page.locator('.plot__title').filter({ hasText: 'Linear acceleration · Upper Arm' })).toBeVisible();
+  await expect(page.locator('.plot__title').filter({ hasText: 'Angular acceleration · Upper Arm' })).toBeVisible();
 
   const frame = page.getByRole('group', { name: 'Express components in' });
   await frame.getByRole('button', { name: 'Body', exact: true }).click();
