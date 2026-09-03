@@ -125,6 +125,39 @@ test('editing a value recomputes the run', async ({ page }) => {
     .toMatch(/^241 \/ 241 frames$/);
 });
 
+test('keeps numeric and quaternion drafts stable until the user commits them', async ({ page }) => {
+  const errors = await openApp(page);
+  await page.getByRole('tab', { name: 'Bodies' }).click();
+  await page.getByText('Upper Arm').first().click();
+
+  // Ordinary numeric fields keep their backing value unchanged while text is being entered.
+  const mass = page.getByRole('textbox', { name: 'Mass' });
+  const massSlider = page.getByRole('slider', { name: 'Mass slider' });
+  const originalSliderValue = await massSlider.inputValue();
+  await mass.fill('7.25');
+  await expect(mass).toHaveValue('7.25');
+  await expect(massSlider).toHaveValue(originalSliderValue);
+  await mass.press('Enter');
+  await expect(massSlider).toHaveValue('7.25');
+
+  // Quaternion components form one transaction. Moving between fields must not normalize
+  // (and therefore rewrite) the values that have already been entered.
+  const rotation = page.locator('.rotation').first();
+  await rotation.getByRole('button', { name: 'Quat', exact: true }).click();
+  const w = rotation.getByRole('textbox', { name: 'w', exact: true });
+  const x = rotation.getByRole('textbox', { name: 'x', exact: true });
+  await w.fill('1');
+  await x.fill('1');
+  await x.press('Enter');
+  await expect(w).toHaveValue('1');
+  await expect(x).toHaveValue('1');
+
+  await rotation.getByRole('button', { name: 'Apply quaternion' }).click();
+  await expect(w).toHaveValue('0.707');
+  await expect(x).toHaveValue('0.707');
+  expect(errors).toEqual([]);
+});
+
 test('freeing all three rotations explains why springs stop applying', async ({ page }) => {
   await openApp(page);
   await page.getByRole('tab', { name: 'Hinges' }).click();

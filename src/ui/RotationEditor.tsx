@@ -17,18 +17,17 @@ import { CopyableRow } from './CopyableRow';
  * Editing an orientation as either Euler angles or a quaternion, with each shown live in
  * terms of the other.
  *
- * The two are never separate modes with separate state — there is one stored quaternion,
- * and both editors read and write it. So typing a quaternion updates the angles as you go
- * and vice versa, and neither can drift from the other because neither is stored.
+ * Euler edits update the stored orientation when each field is committed. Quaternion edits
+ * deliberately use a four-component draft instead: normalizing after every component would
+ * rewrite the remaining fields while the user was still entering them.
  *
  * Two things this makes visible that a single-representation editor hides:
  *
  *  - **Gimbal lock.** Where the Euler triple stops being unique, the panel says so. The
  *    angles are still editable; they simply are no longer the trustworthy reading, and the
  *    quaternion is.
- *  - **Normalization.** A typed quaternion is normalized before it is stored, and the
- *    editor shows the normalized value, so a hand-entered `[1, 1, 0, 0]` visibly becomes a
- *    unit quaternion rather than silently meaning something else.
+ *  - **Normalization.** A quaternion draft is normalized only when Apply is pressed, so a
+ *    hand-entered `[1, 1, 0, 0]` becomes a unit quaternion without fighting data entry.
  */
 
 type Props = {
@@ -51,6 +50,9 @@ function normalize(q: Quat): Quat {
 
 export function RotationEditor({ value, onChange, conventions, label = 'Orientation' }: Props) {
   const [mode, setMode] = useState<'euler' | 'quaternion'>('euler');
+  // `null` follows the stored value. A tuple means the user has started a transaction and
+  // must remain independent of store updates until they apply it.
+  const [quaternionDraft, setQuaternionDraft] = useState<Quat | null>(null);
 
   const euler = eulerFromQuat(value, conventions);
   const slots = eulerSequence(conventions);
@@ -65,9 +67,16 @@ export function RotationEditor({ value, onChange, conventions, label = 'Orientat
   };
 
   const setQuatComponent = (index: 0 | 1 | 2 | 3, next: number) => {
-    const q: Quat = [...value];
+    const q: Quat = [...(quaternionDraft ?? value)];
     q[index] = next;
-    onChange(normalize(q));
+    setQuaternionDraft(q);
+  };
+
+  const applyQuaternion = () => {
+    if (!quaternionDraft) return;
+    const next = normalize(quaternionDraft);
+    setQuaternionDraft(null);
+    onChange(next);
   };
 
   return (
@@ -119,7 +128,7 @@ export function RotationEditor({ value, onChange, conventions, label = 'Orientat
             <NumberField
               key={index}
               label={(['x', 'y', 'z', 'w'] as const)[index]}
-              value={value[index]}
+              value={(quaternionDraft ?? value)[index]}
               onChange={(next) => setQuatComponent(index, next)}
               min={-1}
               max={1}
@@ -127,6 +136,17 @@ export function RotationEditor({ value, onChange, conventions, label = 'Orientat
               {...(index === 3 ? {} : { color: AXIS_COLORS[(['X', 'Y', 'Z'] as const)[index]] })}
             />
           ))}
+          <div className="inline-actions">
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={!quaternionDraft}
+              onClick={applyQuaternion}
+            >
+              Apply quaternion
+            </button>
+          </div>
+          <p className="hint">Components stay exactly as entered until you apply them; the result is then normalized.</p>
           <CopyableRow
             heading={`As Euler · ${describeSequence(conventions)}`}
             values={slots.map((slot) => ({
