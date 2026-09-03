@@ -43,9 +43,9 @@ export function NumberField({
   const [draft, setDraft] = useState<string | null>(null);
 
   const commit = (raw: string) => {
-    setDraft(raw);
     const parsed = Number(raw);
     if (raw.trim() !== '' && Number.isFinite(parsed)) onChange(parsed);
+    setDraft(null);
   };
 
   /**
@@ -76,12 +76,12 @@ export function NumberField({
             inputMode="decimal"
             aria-label={label}
             value={draft ?? format(value)}
-            onChange={(e) => commit(e.target.value)}
+            onChange={(e) => setDraft(e.target.value)}
             onFocus={(e) => {
               setDraft(format(value));
               e.target.select();
             }}
-            onBlur={() => setDraft(null)}
+            onBlur={(e) => commit(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') e.currentTarget.blur();
             }}
