@@ -134,11 +134,12 @@ test('keeps numeric and quaternion drafts stable until the user commits them', a
   const mass = page.getByRole('textbox', { name: 'Mass' });
   const massSlider = page.getByRole('slider', { name: 'Mass slider' });
   const originalSliderValue = await massSlider.inputValue();
-  await mass.fill('7.25');
-  await expect(mass).toHaveValue('7.25');
+  // Stay on the slider's 0.1 step grid so the browser does not round the range value.
+  await mass.fill('7.2');
+  await expect(mass).toHaveValue('7.2');
   await expect(massSlider).toHaveValue(originalSliderValue);
   await mass.press('Enter');
-  await expect(massSlider).toHaveValue('7.25');
+  await expect(massSlider).toHaveValue('7.2');
 
   // Quaternion components form one transaction. Moving between fields must not normalize
   // (and therefore rewrite) the values that have already been entered.
